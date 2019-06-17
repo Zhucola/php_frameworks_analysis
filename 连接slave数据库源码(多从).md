@@ -3,12 +3,14 @@
 2.遍历从库配置  
  * 如果该从库的配置在serverStatusCache缓存中生效则说明过期时间内该配置不可用，直接continue  
  * 如果缓存无值则去实例化PDO  
+ 
 3.实例化PDO  
  * 记录info日志  
  * 记录实例化性能分析日志  
  * new PDO  
  * 设置PDO的ATTR_ERRMODE、ATTR_EMULATE_PREPARES、字符集属性  
  * 执行afterOpen事件  
+ 
 4.实例化失败
  * 记录serverStatusCache缓存，标识该配置600秒(默认)内不可用
 # master连接总体流程
