@@ -1,4 +1,4 @@
-先说从库连接的总体流程，再说细节  
+# slave连接总体流程
 1.随机打乱从库配置  
 2.遍历从库配置  
  * 如果该从库的配置在serverStatusCache缓存中生效则说明过期时间内该配置不可用，直接continue  
@@ -10,14 +10,18 @@
  * 设置PDO的ATTR_ERRMODE、ATTR_EMULATE_PREPARES、字符集属性  
  * 执行afterOpen事件  
 4.实例化失败
-
-	(a)记录serverStatusCache缓存，标识该配置600秒(默认)内不可用
-	
-	
-
-
-
-
+ * 记录serverStatusCache缓存，标识该配置600秒(默认)内不可用
+# master连接总体流程
+1.
+# 涉及方法
+ * getSlavePdo($fallbackToMaster = true)，会调用getSlave(false),如果从库连不上就去连接master(根据参数$fallbackToMaster)
+ * getSlave($fallbackToMaster = true)，会调用openFromPool，从slave配置数组中随机连接一个slave
+ * openFromPool(array $pool, array $sharedConfig)，随机打乱配置信息
+ * openFromPoolSequentially(array $pool, array $sharedConfig),不随机打乱配置信息，遍历配置信息，连接PDO;内部还有serverStatusCache去缓存服务器可用状态
+ * open()，连接master或者slave，会记录info和Profiling日志(可选)
+ * createPdoInstance()，实例化PDO
+ * initConnection()，设置PDO配置和执行afterOpen事件  
+# 源码细节
 yii2中可以配置一主多从配置，在连接从库方面数据库配置如下(控制器中连接配置)
 ```
 <?php
