@@ -10,8 +10,7 @@ class TestController extends Controller
 		    'password' => '',
 		    'charset' => 'utf8',
 		]);
-		$data = $db->createCommand('SELECT * FROM a')
-            ->queryAll();
+    $data = $db->createCommand('SELECT * FROM a')->queryAll();
     $this->asJson($data);
   }
 }
