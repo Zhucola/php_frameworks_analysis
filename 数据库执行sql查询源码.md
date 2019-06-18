@@ -103,7 +103,7 @@ $command->setRetryHandler(function(){
   echo "语句执行发生了异常";
 });
 ```
-实例化最后Command类后还要调用Command->bindValues()，因为最简单的select * from a没有使用参数绑定，所以这个方法直接返回$this
+实例化最后Command类后还要调用Command->bindValues()，因为最简单的select没有使用参数绑定(实参$values为空数据)，所以这个方法直接返回$this
 ```
 public function bindValues($values)
 {
