@@ -215,6 +215,14 @@ public function prepare($forRead = null)
     }
 }
 ```
+如果不能根据参数来判断是读类型sql还是写类型sql，就是去isReadQuery()，可见select|show|describe都是读操作
+```
+public function isReadQuery($sql)
+{
+    $pattern = '/^\s*(SELECT|SHOW|DESCRIBE)\b/i';
+    return preg_match($pattern, $sql) > 0;
+}
+```
 internalExecute代码如下
 ```
 protected function internalExecute($rawSql)
