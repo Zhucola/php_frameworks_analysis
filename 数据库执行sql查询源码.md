@@ -65,7 +65,7 @@ public function getDriverName()
 }
 ```
 Command类就是根据sql命令来实例化的，继承于Component，说明可以使用属性注入、方法和事件  
-因为Command的$this->_sql属性是private，所以走了属性注入setSql()方法
+因为Command的$this->_ sql属性是private，所以走了属性注入setSql()方法
 ```
 public function setSql($sql)
 {
@@ -84,7 +84,7 @@ public function cancel()
     $this->pdoStatement = null;
 }
 ```
-reset方法就是重置与Command类相关的属性，这里需要注意也会将$this->_retryHandler重置，所以如果使用异常重试机制，需要在createCommand后再设置一遍retryHandler
+reset方法就是重置与Command类相关的属性，这里需要注意也会将$this->_ retryHandler重置，所以如果使用异常重试机制，需要在createCommand后再设置一遍retryHandler
 ```
 protected function reset()
 {
@@ -110,4 +110,7 @@ public function bindValues($values)
     if (empty($values)) {
         return $this;
     }
+```
+然后执行queryAll进行全部查询
+```
 ```
