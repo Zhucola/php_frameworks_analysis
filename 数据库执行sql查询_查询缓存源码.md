@@ -311,6 +311,31 @@ $db = new \yii\db\Connection([
 	...
 ]);
 ```
+也可以使用Connection类的cache方法，该方法就是将一个sql语句做缓存
+```
+public function cache(callable $callable, $duration = null, $dependency = null)
+{
+    $this->_queryCacheInfo[] = [$duration === null ? $this->queryCacheDuration : $duration, $dependency];
+    try {
+    	//执行回调，其实回调还会调用createCommand，然后再次走到getQueryCacheInfo方法，拿到的缓存过期时间就是形参$duration
+        $result = call_user_func($callable, $this);
+        array_pop($this->_queryCacheInfo);
+        return $result;
+    } catch (\Exception $e) {
+        array_pop($this->_queryCacheInfo);
+        throw $e;
+    } catch (\Throwable $e) {
+        array_pop($this->_queryCacheInfo);
+        throw $e;
+    }
+}
+```
+如
+```
+$db->cache(function($db){
+	return $db->createCommand("select * from  a")->queryAll();
+});
+```
 要关闭查询缓存，就是调用noCache方法
 ```
 public function noCache()
