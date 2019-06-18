@@ -1,6 +1,6 @@
 ## 目录
 * [从最简单的查询说起](#从最简单的查询说起)
-
+* [查询缓存] (#查询缓存)
 # 从最简单的查询说起
 控制器代码如下
 ```
@@ -254,5 +254,81 @@ protected function internalExecute($rawSql)
             }
         }
     }
+}
+```
+# 查询缓存
+在Command类的queryInternal方法中，会调用$this->db->getQueryCacheInfo方法，参数是$this->queryCacheDuration和$this->queryCacheDependency
+```
+public function getQueryCacheInfo($duration, $dependency)
+{
+    //$this是Connection类
+    if (!$this->enableQueryCache) {
+        return null;
+    }
+
+    $info = end($this->_queryCacheInfo);
+    if (is_array($info)) {
+        if ($duration === null) {
+            $duration = $info[0];
+        }
+        if ($dependency === null) {
+            $dependency = $info[1];
+        }
+    }
+    //可见$duration必须是大于0的
+    if ($duration === 0 || $duration > 0) {
+        if (is_string($this->queryCache) && Yii::$app) {
+	    //依赖注入获取cache组件
+            $cache = Yii::$app->get($this->queryCache, false);
+        } else {
+            $cache = $this->queryCache;
+        }
+        if ($cache instanceof CacheInterface) {
+            return [$cache, $duration, $dependency];
+        }
+    }
+
+    return null;
+}
+```
+在Command类涉及查询缓存的有cache和noCache方法，如果要用查询缓存，需要在每次调用createCommand都调用cache方法
+```
+$command = $db->createCommand("select * from a");
+$command->cache(600);
+```
+或者在db组件中更改commandMap属性
+```
+$db = new \yii\db\Connection([
+	...
+	'commandMap'=>[
+		'mysql'=>[
+			'class'=>'yii\db\Command',
+			'queryCacheDuration'=>600,
+		]
+	],
+	'enableQueryCache'=>true,
+	...
+]);
+```
+要关闭查询缓存，就是调用noCache方法
+```
+public function noCache()
+{
+    $this->queryCacheDuration = -1;
+    return $this;
+}
+```
+查询缓存的键为，可见更改dsn和username也会操作查询缓存键更改
+```
+protected function getCacheKey($method, $fetchMode, $rawSql)
+{
+	return [
+	    __CLASS__,
+	    $method,
+	    $fetchMode,
+	    $this->db->dsn,
+	    $this->db->username,
+	    $rawSql,
+	];
 }
 ```
