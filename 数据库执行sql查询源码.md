@@ -111,6 +111,140 @@ public function bindValues($values)
         return $this;
     }
 ```
-然后执行queryAll进行全部查询
+然后执行queryAll、queryOne、queryColumn进行查询，可见其实调用的都是queryInternal
 ```
+public function queryAll($fetchMode = null)
+{
+    return $this->queryInternal('fetchAll', $fetchMode);
+}
+public function queryOne($fetchMode = null)
+{
+    return $this->queryInternal('fetch', $fetchMode);
+}
+public function queryColumn()
+{
+    return $this->queryInternal('fetchAll', \PDO::FETCH_COLUMN);
+}
+```
+queryInternal方法如下
+```
+protected function queryInternal($method, $fetchMode = null)
+{
+    //拿到真实的参数绑定后的sql语句$rawSql，拿到是否使用性能分析标识$profile
+    list($profile, $rawSql) = $this->logQuery('yii\db\Command::query');
+    if ($method !== '') {
+    	//这里就是去Connection类拿到QueryCache
+        $info = $this->db->getQueryCacheInfo($this->queryCacheDuration, $this->queryCacheDependency);
+        if (is_array($info)) {
+            //cache对象
+            $cache = $info[0];
+            $rawSql = $rawSql ?: $this->getRawSql();
+	    //生成QueryCache键名
+            $cacheKey = $this->getCacheKey($method, $fetchMode, $rawSql);
+	    //get缓存操作
+            $result = $cache->get($cacheKey);
+            if (is_array($result) && isset($result[0])) {
+                Yii::debug('Query result served from cache', 'yii\db\Command::query');
+                return $result[0];
+            }
+        }
+    }
+    //就是拿到$pdo->prepare()并且进行参数绑定，会根据sql类型进行判断是用slave的还是master的
+    $this->prepare(true);
+
+    try {
+    	//开启性能分析日志
+        $profile and Yii::beginProfile($rawSql, 'yii\db\Command::query');
+	//这里就是真正执行sql了
+        $this->internalExecute($rawSql);
+	//这里不太清楚，不用太抠这些细节
+        if ($method === '') {
+            $result = new DataReader($this);
+        } else {
+            if ($fetchMode === null) {
+                $fetchMode = $this->fetchMode;
+            }
+            $result = call_user_func_array([$this->pdoStatement, $method], (array) $fetchMode);
+            $this->pdoStatement->closeCursor();
+        }
+
+        $profile and Yii::endProfile($rawSql, 'yii\db\Command::query');
+    } catch (Exception $e) {
+        $profile and Yii::endProfile($rawSql, 'yii\db\Command::query');
+        throw $e;
+    }
+    //存缓存
+    if (isset($cache, $cacheKey, $info)) {
+        $cache->set($cacheKey, [$result], $info[1], $info[2]);
+        Yii::debug('Saved query result in cache', 'yii\db\Command::query');
+    }
+
+    return $result;
+}
+```
+prepare方法如下
+```
+public function prepare($forRead = null)
+{
+    if ($this->pdoStatement) {
+        $this->bindPendingParams();
+        return;
+    }
+
+    $sql = $this->getSql();
+
+    if ($this->db->getTransaction()) {
+        // master is in a transaction. use the same connection.
+        $forRead = false;
+    }
+    //这里就是根据sql类型来判断是连接slave还是master，从读主写
+    if ($forRead || $forRead === null && $this->db->getSchema()->isReadQuery($sql)) {
+        $pdo = $this->db->getSlavePdo();
+    } else {
+        $pdo = $this->db->getMasterPdo();
+    }
+
+    try {
+        $this->pdoStatement = $pdo->prepare($sql);
+	//参数绑定
+        $this->bindPendingParams();
+    } catch (\Exception $e) {
+        $message = $e->getMessage() . "\nFailed to prepare SQL: $sql";
+        $errorInfo = $e instanceof \PDOException ? $e->errorInfo : null;
+        throw new Exception($message, $errorInfo, (int) $e->getCode(), $e);
+    }
+}
+```
+internalExecute代码如下
+```
+protected function internalExecute($rawSql)
+{
+    $attempt = 0;
+    while (true) {
+        try {
+	    //这里会进行模拟多层级事务，这块会放到事务部分去讲解
+            if (
+                ++$attempt === 1
+                && $this->_isolationLevel !== false
+                && $this->db->getTransaction() === null
+            ) {
+                $this->db->transaction(function () use ($rawSql) {
+                    $this->internalExecute($rawSql);
+                }, $this->_isolationLevel);
+            } else {
+	    	//就是$pdo->execute()
+                $this->pdoStatement->execute();
+            }
+            break;
+        } catch (\Exception $e) {
+            $rawSql = $rawSql ?: $this->getRawSql();
+	    //这里返回了一个\yii\db\Exception
+            $e = $this->db->getSchema()->convertException($e, $rawSql);
+	    //执行异常重试
+            if ($this->_retryHandler === null || !call_user_func($this->_retryHandler, $e, $attempt)) {
+                throw $e;
+            }
+        }
+    }
+}
 ```
