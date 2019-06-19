@@ -1,3 +1,10 @@
+yii对比与普通的原生pdo操作增加了  
+1.引用表名、列名
+2.查询缓存  
+3.php数据类型和mysql-pdo属性类型的映射  
+4.pdo->execute异常下的重试回调  
+5.query类读slave，execute类写master
+6.日志、性能分析日志
 
 控制器代码如下
 ```
