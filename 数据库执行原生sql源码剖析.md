@@ -1,8 +1,4 @@
-## 目录
-* [从最简单的查询说起](#从最简单的查询说起)
-* [查询缓存](#查询缓存)
 
-# 从最简单的查询说起
 控制器代码如下
 ```
 class TestController extends Controller
@@ -128,13 +124,48 @@ $command->setRetryHandler(function(){
   echo "语句执行发生了异常";
 });
 ```
-实例化最后Command类后还要调用Command->bindValues()  
+实例化最后Command类后还要调用Command->bindValues()，yii的参数绑定会用php的数据类型和mysql-pdo的数据类型做对应  
 ```
 public function bindValues($values)
 {
     if (empty($values)) {
         return $this;
     }
+
+    $schema = $this->db->getSchema();
+    foreach ($values as $name => $value) {
+        if (is_array($value)) {
+	    //这里会在以后的版本被废弃调
+            $this->_pendingParams[$name] = $value;
+            $this->params[$name] = $value[0];
+        } elseif ($value instanceof PdoValue) {
+            $this->_pendingParams[$name] = [$value->getValue(), $value->getType()];
+            $this->params[$name] = $value->getValue();
+        } else {
+	    //获取值的类型，将PHP的类型和mysql-PDO的类型做对应
+            $type = $schema->getPdoType($value);
+            $this->_pendingParams[$name] = [$value, $type];
+            $this->params[$name] = $value;
+        }
+    }
+
+    return $this;
+}
+...
+public function getPdoType($data)
+{
+    static $typeMap = [
+        // php type => PDO type
+        'boolean' => \PDO::PARAM_BOOL,
+        'integer' => \PDO::PARAM_INT,
+        'string' => \PDO::PARAM_STR,
+        'resource' => \PDO::PARAM_LOB,
+        'NULL' => \PDO::PARAM_NULL,
+    ];
+    $type = gettype($data);
+    //php的数据类型和mysql-pdo的数据类型做对应，如果对应不上就会认为是PDO::PARAM_STR类型
+    return isset($typeMap[$type]) ? $typeMap[$type] : \PDO::PARAM_STR;
+}
 ```
 然后执行queryAll、queryOne、queryColumn进行查询，可见其实调用的都是queryInternal
 ```
@@ -281,104 +312,75 @@ protected function internalExecute($rawSql)
     }
 }
 ```
-# 查询缓存
-在Command类的queryInternal方法中，会调用$this->db->getQueryCacheInfo方法，参数是$this->queryCacheDuration和$this->queryCacheDependency
+yii会认为调用query类的方法都是读操作并且连接slave库，调用execute的方法都是写操作去调用master库
 ```
-public function getQueryCacheInfo($duration, $dependency)
+public function execute()
 {
-    //$this是Connection类
-    if (!$this->enableQueryCache) {
-        return null;
-    }
+    $sql = $this->getSql();
+    list($profile, $rawSql) = $this->logQuery(__METHOD__);
 
-    $info = end($this->_queryCacheInfo);
-    if (is_array($info)) {
-        if ($duration === null) {
-            $duration = $info[0];
-        }
-        if ($dependency === null) {
-            $dependency = $info[1];
-        }
+    if ($sql == '') {
+        return 0;
     }
-    //可见$duration必须是大于0的
-    if ($duration === 0 || $duration > 0) {
-        if (is_string($this->queryCache) && Yii::$app) {
-	    //依赖注入获取cache组件
-            $cache = Yii::$app->get($this->queryCache, false);
-        } else {
-            $cache = $this->queryCache;
-        }
-        if ($cache instanceof CacheInterface) {
-            return [$cache, $duration, $dependency];
-        }
-    }
+    
+    $this->prepare(false);
 
-    return null;
-}
-```
-在Command类涉及查询缓存的有cache和noCache方法，如果要用查询缓存，需要在每次调用createCommand都调用cache方法
-```
-$command = $db->createCommand("select * from a");
-$command->cache(600);
-```
-或者在db组件中更改commandMap属性
-```
-$db = new \yii\db\Connection([
-	...
-	'commandMap'=>[
-		'mysql'=>[
-			'class'=>'yii\db\Command',
-			'queryCacheDuration'=>600,
-		]
-	],
-	'enableQueryCache'=>true,
-	...
-]);
-```
-也可以使用Connection类的cache方法，该方法就是将一个sql语句做缓存
-```
-public function cache(callable $callable, $duration = null, $dependency = null)
-{
-    $this->_queryCacheInfo[] = [$duration === null ? $this->queryCacheDuration : $duration, $dependency];
     try {
-    	//执行回调，其实回调还会调用createCommand，然后再次走到getQueryCacheInfo方法，拿到的缓存过期时间就是形参$duration
-        $result = call_user_func($callable, $this);
-        array_pop($this->_queryCacheInfo);
-        return $result;
-    } catch (\Exception $e) {
-        array_pop($this->_queryCacheInfo);
-        throw $e;
-    } catch (\Throwable $e) {
-        array_pop($this->_queryCacheInfo);
+        $profile and Yii::beginProfile($rawSql, __METHOD__);
+
+        $this->internalExecute($rawSql);
+        $n = $this->pdoStatement->rowCount();
+
+        $profile and Yii::endProfile($rawSql, __METHOD__);
+
+        $this->refreshTableSchema();
+
+        return $n;
+    } catch (Exception $e) {
+        $profile and Yii::endProfile($rawSql, __METHOD__);
         throw $e;
     }
 }
 ```
-如
+这里说一下getSql方法和getRawSql方法的区别
 ```
-$db->cache(function($db){
-	return $db->createCommand("select * from  a")->queryAll();
-});
-```
-要关闭查询缓存，就是调用noCache方法
-```
-public function noCache()
+public function getSql()
 {
-    $this->queryCacheDuration = -1;
-    return $this;
+	//如果sql是select * from a where id=:id，那么返回的就是select * from a where id=:id
+	return $this->_sql;
 }
 ```
-查询缓存的键为，可见更改dsn和username也会操作查询缓存键更改
 ```
-protected function getCacheKey($method, $fetchMode, $rawSql)
+public function getRawSql()
 {
-	return [
-	    __CLASS__,
-	    $method,
-	    $fetchMode,
-	    $this->db->dsn,
-	    $this->db->username,
-	    $rawSql,
-	];
+    if (empty($this->params)) {
+        return $this->_sql;
+    }
+    $params = [];
+    foreach ($this->params as $name => $value) {
+        if (is_string($name) && strncmp(':', $name, 1)) {
+            $name = ':' . $name;
+        }
+        if (is_string($value)) {
+            $params[$name] = $this->db->quoteValue($value);
+        } elseif (is_bool($value)) {
+            $params[$name] = ($value ? 'TRUE' : 'FALSE');
+        } elseif ($value === null) {
+            $params[$name] = 'NULL';
+        } elseif ((!is_object($value) && !is_resource($value)) || $value instanceof Expression) {
+            $params[$name] = $value;
+        }
+    }
+    if (!isset($params[1])) {
+        //这里其实是重点
+	//如果sql是select * from a where id=:id，参数绑定是:id=1，那么会变成select * from a where id=1
+        return strtr($this->_sql, $params);
+    }
+    $sql = '';
+    foreach (explode('?', $this->_sql) as $i => $part) {
+        $sql .= (isset($params[$i]) ? $params[$i] : '') . $part;
+    }
+
+    return $sql;
 }
 ```
