@@ -16,16 +16,21 @@ class TestController extends Controller
 		    
 		]);
 		$command = $db->createCommand("select * from a");
-		$command->nocache();
-		$command->cache(600);
 		$res1 = $command->queryAll();
 		$res2 = $command->queryOne();
 		$res3 = $command->queryColumn();
+		$command = $db->createCommand("select * from {{a}} where [[id]]=:id",[":id"=>"1"]);
+		$res1 = $command->queryAll();
+		$command = $db->createCommand("select * from {{a}} where [[id]]=:id",[":id"=>"1"]);
+		$res1 = $command->queryAll();
+		$command = $db->createCommand("update a set age = 123 where id=:id")
+			->bindValue(":id",1)
+			->execute();
 		return $this->asJson($res1);
 	}
 }
 ```
-可见简单的查询都要通过createCommand()返回的对象来进行操作，createCommand()就是实例化了yii2\db\Command类
+可见执行原生的sql都要通过createCommand()返回的对象来进行操作，createCommand()就是实例化了yii2\db\Command类
 ```
 public function createCommand($sql = null, $params = [])
 {
@@ -42,6 +47,7 @@ public function createCommand($sql = null, $params = [])
     $config['sql'] = $sql;
     //实例化
     $command = Yii::createObject($config);
+    //参数绑定
     return $command->bindValues($params);
 }
 ```
@@ -49,7 +55,7 @@ public function createCommand($sql = null, $params = [])
 ```
   $dsn = "mysql:host=127.0.0.1;dbname=test"
 ```
-数据库驱动类型就是mysql，这里涉及到了连接数据库直接从pdo对象获取类型
+数据库驱动类型就是mysql，这里涉及到了连接数据库直接从pdo对象获取类型(如果$dsn没有":")
 ```
 public function getDriverName()
 {
@@ -58,6 +64,7 @@ public function getDriverName()
             $this->_driverName = strtolower(substr($this->dsn, 0, $pos));
         } else {
             //如果dsn属性没有':'，就去连接slave
+	    //直接通过pdo对象去拿驱动类型
             $this->_driverName = strtolower($this->getSlavePdo()->getAttribute(PDO::ATTR_DRIVER_NAME));
         }
     }
@@ -66,7 +73,8 @@ public function getDriverName()
 }
 ```
 Command类就是根据sql命令来实例化的，继承于Component，说明可以使用属性注入、方法和事件  
-因为Command的$this->_ sql属性是private，所以走了属性注入setSql()方法
+但是Command没有可用的事件  
+因为Command的$this->_ sql属性是private，所以走了属性注入setSql()方法  
 ```
 public function setSql($sql)
 {
@@ -77,6 +85,18 @@ public function setSql($sql)
     }
     return $this;
 }
+```
+yii使用了引用表名和列名，就是将表名table_name写成{{%table_name}}，列column写成[[column]]  
+quoteSql内部其实就是根据驱动类型实例化了Schema对象，去根据Schema去将列的前后拼上columnQuoteCharacter，表名前后拼上tableQuoteCharacter，然后如果表名里面有%，会将%转为表前缀，如：
+```
+	$db->tablePrefix="main_";
+	...
+	$sql = 'select count([[id]]) from {{%table}}';
+	...
+```
+最后会转换成
+```
+	select count `id` from `main_table`
 ```
 cancel方法就是重置pdo的prepare操作
 ```
@@ -90,10 +110,14 @@ reset方法就是重置与Command类相关的属性，这里需要注意也会�
 protected function reset()
 {
     $this->_sql = null;
+    //参数绑定
     $this->_pendingParams = [];
+    //参数绑定
     $this->params = [];
     $this->_refreshTableName = null;
+    //事务层级
     $this->_isolationLevel = false;
+    //pdo的execute方法抛出异常的重试回调
     $this->_retryHandler = null;
 }
 ```
@@ -104,7 +128,7 @@ $command->setRetryHandler(function(){
   echo "语句执行发生了异常";
 });
 ```
-实例化最后Command类后还要调用Command->bindValues()，因为最简单的select没有使用参数绑定(实参$values为空数据)，所以这个方法直接返回$this
+实例化最后Command类后还要调用Command->bindValues()  
 ```
 public function bindValues($values)
 {
