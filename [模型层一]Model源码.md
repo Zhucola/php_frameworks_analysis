@@ -335,3 +335,29 @@ public static function loadMultiple($models, $data, $formName = null)
     return $success;
 }
 ```
+# 场景
+一个Model可以用在多个场景下，比如User模型用于登录和注册场景，不同的场景会有不同的校验规则和属性  
+默认Model场景为default
+```
+const SCENARIO_DEFAULT = 'default';
+private $_scenario = self::SCENARIO_DEFAULT;
+```
+因为Model继承于Component，所以可以使用属性注入，控制器代码如下  
+```
+public function actionUser(){
+    $user_model = User::instance();
+    $user_model -> scenario = "login";
+    return $user_model->scenario;
+}
+```
+会调用Model底层的getScenario和setScenario
+```
+public function getScenario()
+{
+    return $this->_scenario;
+}
+public function setScenario($value)
+{
+    $this->_scenario = $value;
+}
+```
