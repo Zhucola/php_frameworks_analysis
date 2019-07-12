@@ -62,3 +62,12 @@ trait StaticInstanceTrait
     }
 }
 ```
+由于是trait，所以可以在自己的Model里面重写instance方法  
+```
+class User extends Model
+{
+    public static function instance(){
+        echo "instance rewrite";
+    }
+}
+```
