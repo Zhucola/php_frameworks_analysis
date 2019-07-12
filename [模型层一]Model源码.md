@@ -275,15 +275,67 @@ public function activeAttributes()
 public function setAttributes($values, $safeOnly = true)
 {
     if (is_array($values)) {
-        //判断是
+        //判断是获取safe属性还是直接获取类的非静态共有方法
         $attributes = array_flip($safeOnly ? $this->safeAttributes() : $this->attributes());
         foreach ($values as $name => $value) {
             if (isset($attributes[$name])) {
+                //给类属性赋值
                 $this->$name = $value;
             } elseif ($safeOnly) {
+                //对不安全的属性记录日志
                 $this->onUnsafeAttribute($name, $value);
             }
         }
     }
+}
+//对不安全的属性记录日志，只在debug模式下会记录日志
+public function onUnsafeAttribute($name, $value)
+{
+    if (YII_DEBUG) {
+        Yii::debug("Failed to set unsafe attribute '$name' in '" . get_class($this) . "'.", __METHOD__);
+    }
+}
+```
+或者也可以使用load、loadMultiple给属性赋值
+```
+public function load($data, $formName = null)
+{
+    $scope = $formName === null ? $this->formName() : $formName;
+    if ($scope === '' && !empty($data)) {
+        $this->setAttributes($data);
+
+        return true;
+    } elseif (isset($data[$scope])) {
+        $this->setAttributes($data[$scope]);
+
+        return true;
+    }
+
+    return false;
+}
+public static function loadMultiple($models, $data, $formName = null)
+{
+    if ($formName === null) {
+        /* @var $first Model|false */
+        $first = reset($models);
+        if ($first === false) {
+            return false;
+        }
+        $formName = $first->formName();
+    }
+
+    $success = false;
+    foreach ($models as $i => $model) {
+        /* @var $model Model */
+        if ($formName == '') {
+            if (!empty($data[$i]) && $model->load($data[$i], '')) {
+                $success = true;
+            }
+        } elseif (!empty($data[$formName][$i]) && $model->load($data[$formName][$i], '')) {
+            $success = true;
+        }
+    }
+
+    return $success;
 }
 ```
