@@ -2,13 +2,17 @@
 * [Model类结构](#Model类架构)
 * [创建Model](#创建Model)
 * [属性](#属性)
-* [属性标签与属性hint](#属性标签与属性hint)
 * [场景](#场景)
 * [验证](#验证)
 * [不注册直接从认证组件获取用户信息源码](#不注册直接从认证组件获取用户信息源码)
 
 # Model类架构
 Model类源码在verdor/yiisoft/yii2/base/Model.php，该类和传统框架的模型层不一样，比如CI3的模型层Model是专门和数据库交互的，而Yii2的Model是用来处理业务数据、逻辑、验证、获取验证错误信息的  
+个人感觉yii2的Model层比较难理解，注释中作者写道  
+```
+Model is the base class for data models
+You may directly use Model to store model data, or extend it with customization
+```
 单纯的Model类无法和数据库交互，需要配合活动记录ActiveRecord  
 ```
 class Model extends Component implements StaticInstanceInterface, IteratorAggregate, ArrayAccess, Arrayable
@@ -101,4 +105,86 @@ public function getAttributes($names = null, $except = [])  //获取属性，并
 public function setAttributes($values, $safeOnly = true)  //设置属性值，如果safeOnly为true则只能设置在该场景下rule中的属性
 public function fields()  //获取属性数组
 public function getIterator()  //属性迭代器，为IteratorAggregate接口需要继承的方法
+```
+attributes方法，获取全部所有非静态共有属性  
+其实php的get_class_vars方法也是获取全部共有属性，但是get_class_vars也获取的静态共有属性  
+```
+public function attributes()
+{
+    //反射该类
+    $class = new ReflectionClass($this);
+    $names = [];
+    //获取全部共有属性
+    foreach ($class->getProperties(\ReflectionProperty::IS_PUBLIC) as $property) {
+        if (!$property->isStatic()) {
+            //排除静态属性
+            $names[] = $property->getName();
+        }
+    }
+
+    return $names;
+}
+```
+getAttributes方法感觉比较鸡肋，源码比较简单  
+```
+public function getAttributes($names = null, $except = [])
+{
+    $values = [];
+    if ($names === null) {
+        $names = $this->attributes();  //获取全部非静态共有属性
+    }
+    foreach ($names as $name) {
+        $values[$name] = $this->$name;
+    }
+    foreach ($except as $name) {  //排除属性
+        unset($values[$name]);
+    }
+
+    return $values;
+}
+```
+attributeLabels和attributeHints方法是获取全部属性标签和属性hint，需要自己去重写这两个方法  
+hint其实没理解到底应该怎么用，其实我感觉直接使用标签就够了  
+```
+public function attributeLabels()
+{
+    return [];
+}
+public function attributeHints()
+{
+    return [];
+}
+public function getAttributeLabel($attribute)   //获取$attribute属性标签
+{
+    $labels = $this->attributeLabels();
+    return isset($labels[$attribute]) ? $labels[$attribute] : $this->generateAttributeLabel($attribute);
+}
+public function getAttributeHint($attribute)  //获取属性hints
+{
+    $hints = $this->attributeHints();
+    return isset($hints[$attribute]) ? $hints[$attribute] : '';
+}
+public function generateAttributeLabel($name)
+{
+    return Inflector::camel2words($name, true);   //其实就是mb_ucwords
+}
+```
+重写
+```
+class User extends Model
+{
+    public function attributeLabels()
+    {
+        return [
+            "name"=>"a name",   //name被注册为一个属性标签
+        ];
+    }
+    
+    public function attributeHints()
+    {
+        return [
+            "age"=>"x age",   //age被注册为一个属性hint
+        ];
+    }
+}
 ```
