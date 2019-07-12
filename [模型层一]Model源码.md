@@ -26,10 +26,6 @@ class Model extends Component implements StaticInstanceInterface, IteratorAggreg
     private $_validators;  //验证类
     private $_scenario = self::SCENARIO_DEFAULT;  //场景
 ```
-Model可以使用类迭代器Iterator、数组式访问，还实现yii底层封装的Arrayable接口
-```
-
-```
 # 创建Model
 可以在控制器里面直接new一个Model
 ```
