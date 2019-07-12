@@ -361,3 +361,9 @@ public function setScenario($value)
     $this->_scenario = $value;
 }
 ```
+也可以在实例化的时候直接给场景赋值，底层走的是BaseYii::configure，然后走属性注入的魔术方法    
+```
+public function actionUser(){
+    $user_model = new User(["scenario"=>"login"]);
+}
+```
