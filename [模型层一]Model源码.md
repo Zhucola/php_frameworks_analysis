@@ -143,6 +143,23 @@ public function getAttributes($names = null, $except = [])
     return $values;
 }
 ```
+fields也是获取全部非静态共有属性，只不过返回结构不同  
+```
+public function fields()
+{
+    $fields = $this->attributes();
+
+    return array_combine($fields, $fields);
+}
+```
+base\Model有trait ArrayableTrait，ArrayableTrait里面也有一个fields，区别就是Model的fields不会获取非静态共有属性  
+```
+public function fields()
+{
+    $fields = array_keys(Yii::getObjectVars($this));
+    return array_combine($fields, $fields);
+}
+```
 attributeLabels和attributeHints方法是获取全部属性标签和属性hint，需要自己去重写这两个方法  
 hint其实没理解到底应该怎么用，其实我感觉直接使用标签就够了  
 ```
@@ -186,5 +203,70 @@ class User extends Model
             "age"=>"x age",   //age被注册为一个属性hint
         ];
     }
+}
+```
+isAttributeRequired方法会判断参数$attribute是否需要被RequiredValidator类校验  
+```
+public function isAttributeRequired($attribute)
+{
+    //获取$attribute在该场景下的全部校验类
+    foreach ($this->getActiveValidators($attribute) as $validator) {  
+        if ($validator instanceof RequiredValidator && $validator->when === null) {
+            return true;
+        }
+    }
+
+    return false;
+}
+```
+获取safe属性
+```
+public function safeAttributes()
+{
+    //获取本场景
+    $scenario = $this->getScenario();
+    //获取场景与属性的对应关系
+    $scenarios = $this->scenarios();
+    if (!isset($scenarios[$scenario])) {
+        return [];
+    }
+    $attributes = [];
+    foreach ($scenarios[$scenario] as $attribute) {
+        if ($attribute[0] !== '!' && !in_array('!' . $attribute, $scenarios[$scenario])) {
+            $attributes[] = $attribute;
+        }
+    }
+    return $attributes;
+}
+```
+关于safe属性，如果有如下配置，场景为default，那么safe属性就是name和sex
+```
+class User extends Model{
+    public function rules()
+    {
+        return [
+            [['name'], 'required', 'on' => 'default'],
+            [['sex'], 'boolean', 'on' => ['default','login']],
+            [['!height'], 'boolean', 'except'=>"unregister"],
+        ];
+    }
+}
+```
+还有一个属性是active属性，相对于safe属性，就是name、sex、height
+```
+public function activeAttributes()
+{
+    $scenario = $this->getScenario();
+    $scenarios = $this->scenarios();
+    if (!isset($scenarios[$scenario])) {
+        return [];
+    }
+    $attributes = array_keys(array_flip($scenarios[$scenario]));
+    foreach ($attributes as $i => $attribute) {
+        if ($attribute[0] === '!') {
+            $attributes[$i] = substr($attribute, 1);
+        }
+    }
+    return $attributes;
 }
 ```
