@@ -270,3 +270,20 @@ public function activeAttributes()
     return $attributes;
 }
 ```
+给属性赋值的操作是setAttributes
+```
+public function setAttributes($values, $safeOnly = true)
+{
+    if (is_array($values)) {
+        //判断是
+        $attributes = array_flip($safeOnly ? $this->safeAttributes() : $this->attributes());
+        foreach ($values as $name => $value) {
+            if (isset($attributes[$name])) {
+                $this->$name = $value;
+            } elseif ($safeOnly) {
+                $this->onUnsafeAttribute($name, $value);
+            }
+        }
+    }
+}
+```
