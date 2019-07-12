@@ -1,5 +1,6 @@
 ## 目录
 * [Model类结构](#Model类架构)
+* [创建Model](#创建Model)
 * [属性](#属性)
 * [属性标签](#属性标签)
 * [场景](#场景)
@@ -24,4 +25,40 @@ class Model extends Component implements StaticInstanceInterface, IteratorAggreg
 Model可以使用类迭代器Iterator、数组式访问，还实现yii底层封装的Arrayable接口
 ```
 
+```
+# 创建Model
+可以在控制器里面直接new一个Model
+```
+use app\models\User;
+class TestController extends Controller{
+    public function actionModel(){
+        $user = new User();
+    }
+}
+```
+也可以用静态方法实例化
+```
+use app\models\User;
+class TestController extends Controller{
+    public function actionModel(){
+        $user1 = User:instance();
+        $user2 = User:instance(true);
+    }
+}
+```
+因为base\Model使用了StaticInstanceTrait，StaticInstanceTrait是一个trait，里面只有一个静态方法instance  
+参数refresh为false可以防止多次调用造成的多次实例化，同时true可以强制重新实例化
+```
+trait StaticInstanceTrait
+{
+    private static $_instances = [];
+    public static function instance($refresh = false)
+    {
+        $className = get_called_class();
+        if ($refresh || !isset(self::$_instances[$className])) {
+            self::$_instances[$className] = Yii::createObject($className);
+        }
+        return self::$_instances[$className];
+    }
+}
 ```
