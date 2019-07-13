@@ -292,6 +292,19 @@ public function onUnsafeAttribute($name, $value)
     }
 }
 ```
+setAttributes也叫块赋值，只用一行代码将用户所有输入填充到一个模型, 以下两段代码效果是相同的， 都是将终端用户输入的表单数据赋值到Model   
+```
+$model = new \app\models\ContactForm;
+$model->attributes = \Yii::$app->request->post('ContactForm');
+```
+```
+$model = new \app\models\ContactForm;
+$data = \Yii::$app->request->post('ContactForm', []);
+$model->name = isset($data['name']) ? $data['name'] : null;
+$model->email = isset($data['email']) ? $data['email'] : null;
+$model->subject = isset($data['subject']) ? $data['subject'] : null;
+$model->body = isset($data['body']) ? $data['body'] : null;
+```
 或者也可以使用load、loadMultiple给属性赋值
 ```
 public function load($data, $formName = null)
