@@ -4,7 +4,6 @@
 * [属性](#属性)
 * [场景](#场景)
 * [验证](#验证)
-* [不注册直接从认证组件获取用户信息源码](#不注册直接从认证组件获取用户信息源码)
 
 # Model类架构
 Model类源码在verdor/yiisoft/yii2/base/Model.php，该类和传统框架的模型层不一样，比如CI3的模型层Model是专门和数据库交互的，而Yii2的Model是用来处理业务数据、逻辑、验证、获取验证错误信息的  
@@ -583,5 +582,88 @@ class User extends Model
         }
         return true;
     }
+}
+```
+执行验证的方法是validate，就是根据rules和场景来进行Validator类的验证
+```
+public function validate($attributeNames = null, $clearErrors = true)
+{
+    if ($clearErrors) {
+        //清除所有验证错误信息
+        $this->clearErrors();
+    }
+    
+    //验证开始事件
+    if (!$this->beforeValidate()) {
+        return false;
+    }
+    //获取所有场景下的验证规则
+    $scenarios = $this->scenarios();
+    //获取场景
+    $scenario = $this->getScenario();
+    if (!isset($scenarios[$scenario])) {
+        throw new InvalidArgumentException("Unknown scenario: $scenario");
+    }
+    //获取本场景下的验证规则
+    if ($attributeNames === null) {
+        $attributeNames = $this->activeAttributes();
+    }
+    $attributeNames = (array)$attributeNames;
+    //获取验证规则对应的验证类，遍历
+    foreach ($this->getActiveValidators() as $validator) {
+        $validator->validateAttributes($this, $attributeNames);
+    }
+    //验证结束事件
+    $this->afterValidate();
+    //是否有验证错误信息
+    return !$this->hasErrors();
+}
+```
+具体的验证在Validator类里面的validateAttributes方法  
+```
+public function validateAttributes($model, $attributes = null)
+{
+    //获取被验证类需要验证的属性
+    $attributes = $this->getValidationAttributes($attributes);
+    foreach ($attributes as $attribute) {
+        //在该属性已经有错误信息或者该属性是空的情况下跳过
+        $skip = $this->skipOnError && $model->hasErrors($attribute)
+            || $this->skipOnEmpty && $this->isEmpty($model->$attribute);
+        if (!$skip) {
+            if ($this->when === null || call_user_func($this->when, $model, $attribute)) {
+                //执行验证
+                $this->validateAttribute($model, $attribute);
+            }
+        }
+    }
+}
+```
+判断为空的逻辑如下
+```
+public function isEmpty($value)
+{
+    if ($this->isEmpty !== null) {
+        return call_user_func($this->isEmpty, $value);
+    }
+
+    return $value === null || $value === [] || $value === '';
+}
+```
+如果要在申明规则下不跳过错误并且不跳过空的，可以
+```
+public function rules()
+{
+    return [
+        [['name'], 'required'],
+        //申明height和sex属性不跳过错误并且不跳过空
+        [['height','sex'], 'boolean', 'on' => ['default','login'],'skipOnEmpty'=>false,"skipOnError"=>false],
+    ];
+}
+```
+验证方法为各个验证类的validateValue方法，如果验证失败会执行addError添加验证错误信息
+```
+public function addError($attribute, $error = '')
+{
+    $this->_errors[$attribute][] = $error;
 }
 ```
