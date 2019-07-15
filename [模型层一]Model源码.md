@@ -406,3 +406,182 @@ rules方法的规则如下
 - 如果没有on或者except标识，则说明本条规则在所有场景下适用
 - 如果有on标识，则说明本条规则只在on下适用
 - 如果有except标识，则说明本条规则除了except下适用  
+所以以上User类的规则如下  
+- defaults场景下验证name、height、sex、age
+- login场景下验证name、height、sex、age  
+- unregister场景下验证name  
+获取验证规则可以使用scenarios方法  
+```
+public function scenarios()
+{
+    //默认default场景
+    $scenarios = [self::SCENARIO_DEFAULT => []];
+    //获取验证规则类，并且遍历
+    foreach ($this->getValidators() as $validator) {
+        //on下的验证规则
+        foreach ($validator->on as $scenario) {
+            $scenarios[$scenario] = [];
+        }
+        //except下的验证规则
+        foreach ($validator->except as $scenario) {
+            $scenarios[$scenario] = [];
+        }
+    }
+    $names = array_keys($scenarios);
+    //获取验证规则类，并且遍历
+    foreach ($this->getValidators() as $validator) {
+        //如果本条验证规则没有on和except，就是所有场景下都适用
+        if (empty($validator->on) && empty($validator->except)) {
+            foreach ($names as $name) {
+                foreach ($validator->attributes as $attribute) {
+                    $scenarios[$name][$attribute] = true;
+                }
+            }
+        //如果本条验证规则只在on场景下适用
+        } elseif (empty($validator->on)) {
+            foreach ($names as $name) {
+                //这个验证规则不在except场景下出现
+                if (!in_array($name, $validator->except, true)) {
+                    foreach ($validator->attributes as $attribute) {
+                        $scenarios[$name][$attribute] = true;
+                    }
+                }
+            }
+        } else {
+            foreach ($validator->on as $name) {
+                foreach ($validator->attributes as $attribute) {
+                    $scenarios[$name][$attribute] = true;
+                }
+            }
+        }
+    }
+    foreach ($scenarios as $scenario => $attributes) {
+        if (!empty($attributes)) {
+            $scenarios[$scenario] = array_keys($attributes);
+        }
+    }
+    return $scenarios;
+}
+```
+获取验证类逻辑如下  
+```
+public function getValidators()
+{
+    if ($this->_validators === null) {
+        $this->_validators = $this->createValidators();
+    }
+    return $this->_validators;
+}
+public function createValidators()
+{
+    $validators = new ArrayObject();
+    foreach ($this->rules() as $rule) {
+        if ($rule instanceof Validator) {
+            $validators->append($rule);
+        } elseif (is_array($rule) && isset($rule[0], $rule[1])) { // attributes, validator type
+            $validator = Validator::createValidator($rule[1], $this, (array) $rule[0], array_slice($rule, 2));
+            $validators->append($validator);
+        } else {
+            throw new InvalidConfigException('Invalid validation rule: a rule must specify both attribute names and validator type.');
+        }
+    }
+
+    return $validators;
+}
+```
+涉及到了底层了验证Validator类，验证通过createValidator方法实例化  
+```
+public static function createValidator($type, $model, $attributes, $params = [])
+{
+    $params['attributes'] = $attributes;
+
+    if ($type instanceof \Closure || ($model->hasMethod($type) && !isset(static::$builtInValidators[$type]))) {
+        // method-based validator
+        $params['class'] = __NAMESPACE__ . '\InlineValidator';
+        $params['method'] = $type;
+    } else {
+        if (isset(static::$builtInValidators[$type])) {
+            $type = static::$builtInValidators[$type];
+        }
+        if (is_array($type)) {
+            $params = array_merge($type, $params);
+        } else {
+            $params['class'] = $type;
+        }
+    }
+    return Yii::createObject($params);
+}
+```
+在createValidator里面实例化后还会走init
+```
+public function init()
+{
+    parent::init();
+    $this->attributes = (array) $this->attributes;
+    $this->on = (array) $this->on;
+    $this->except = (array) $this->except;
+}
+```
+可用的验证规则如下
+```
+public static $builtInValidators = [
+    'boolean' => 'yii\validators\BooleanValidator',
+    'captcha' => 'yii\captcha\CaptchaValidator',
+    'compare' => 'yii\validators\CompareValidator',
+    'date' => 'yii\validators\DateValidator',
+    'datetime' => [
+        'class' => 'yii\validators\DateValidator',
+        'type' => DateValidator::TYPE_DATETIME,
+    ],
+    'time' => [
+        'class' => 'yii\validators\DateValidator',
+        'type' => DateValidator::TYPE_TIME,
+    ],
+    'default' => 'yii\validators\DefaultValueValidator',
+    'double' => 'yii\validators\NumberValidator',
+    'each' => 'yii\validators\EachValidator',
+    'email' => 'yii\validators\EmailValidator',
+    'exist' => 'yii\validators\ExistValidator',
+    'file' => 'yii\validators\FileValidator',
+    'filter' => 'yii\validators\FilterValidator',
+    'image' => 'yii\validators\ImageValidator',
+    'in' => 'yii\validators\RangeValidator',
+    'integer' => [
+        'class' => 'yii\validators\NumberValidator',
+        'integerOnly' => true,
+    ],
+    'match' => 'yii\validators\RegularExpressionValidator',
+    'number' => 'yii\validators\NumberValidator',
+    'required' => 'yii\validators\RequiredValidator',
+    'safe' => 'yii\validators\SafeValidator',
+    'string' => 'yii\validators\StringValidator',
+    'trim' => [
+        'class' => 'yii\validators\FilterValidator',
+        'filter' => 'trim',
+        'skipOnArray' => true,
+    ],
+    'unique' => 'yii\validators\UniqueValidator',
+    'url' => 'yii\validators\UrlValidator',
+    'ip' => 'yii\validators\IpValidator',
+];
+```
+如果不想用以上的验证规则，可以在自己的类里面新建一个验证规则  
+```
+class User extends Model
+{
+    public function rules()
+    {
+        return [
+            [["name"],"myValidators"]
+        ];
+    }
+    
+    public function myValidators($value)
+    {
+        if($value != 123){
+            return false;
+        }
+        return true;
+    }
+}
+```
