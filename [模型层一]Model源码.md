@@ -380,3 +380,29 @@ public function actionUser(){
     $user_model = new User(["scenario"=>"login"]);
 }
 ```
+# 验证
+验证需要申明验证规则，base\Model的rules方法返回的是空数组
+```
+public function rules()
+{
+    return [];
+}
+```
+所以需要重写这个方法
+```
+class User extends Model
+{
+    public function rules()
+    {
+        return [
+            [['name'], 'required'],
+            [['height','sex'], 'boolean', 'on' => ['default','login']],
+            [['age'], 'boolean', 'except'=>"unregister"],
+        ];
+    }
+}
+```
+rules方法的规则如下  
+- 如果没有on或者except标识，则说明本条规则在所有场景下适用
+- 如果有on标识，则说明本条规则只在on下适用
+- 如果有except标识，则说明本条规则除了except下适用  
