@@ -7,6 +7,8 @@
 |框架|进度|
 |---|---
 |Yii2|进行中
+|Laravel|未开始
+|Lumen|未开始
 |redlock-php|已读完
 |CI3|已读完
 |verdor/composer|已读完
