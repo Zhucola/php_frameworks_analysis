@@ -160,3 +160,72 @@ $1
 3
 
 ```
+最后将数据发给redis服务
+```
+private function sendCommandInternal($command, $params)
+{
+    $written = @fwrite($this->_socket, $command);
+    if ($written === false) {
+        throw new SocketException("Failed to write to socket.\nRedis command was: " . $command);
+    }
+    if ($written !== ($len = mb_strlen($command, '8bit'))) {
+        throw new SocketException("Failed to write to socket. $written of $len bytes written.\nRedis command was: " . $command);
+    }
+    return $this->parseResponse(implode(' ', $params));
+}
+```
+然后需要得到redis服务的响应
+```
+private function parseResponse($command)
+{
+    if (($line = fgets($this->_socket)) === false) {
+        throw new SocketException("Failed to read from socket.\nRedis command was: " . $command);
+    }
+    $type = $line[0];
+    $line = mb_substr($line, 1, -2, '8bit');
+    switch ($type) {
+        case '+': // Status reply
+            if ($line === 'OK' || $line === 'PONG') {
+                return true;
+            } else {
+                return $line;
+            }
+        case '-': // Error reply
+            throw new Exception("Redis error: " . $line . "\nRedis command was: " . $command);
+        case ':': // Integer reply
+            // no cast to int as it is in the range of a signed 64 bit integer
+            return $line;
+        case '$': // Bulk replies
+            if ($line == '-1') {
+                return null;
+            }
+            $length = (int)$line + 2;
+            $data = '';
+            while ($length > 0) {
+                if (($block = fread($this->_socket, $length)) === false) {
+                    throw new SocketException("Failed to read from socket.\nRedis command was: " . $command);
+                }
+                $data .= $block;
+                $length -= mb_strlen($block, '8bit');
+            }
+
+            return mb_substr($data, 0, -2, '8bit');
+        case '*': // Multi-bulk replies
+            $count = (int) $line;
+            $data = [];
+            for ($i = 0; $i < $count; $i++) {
+                $data[] = $this->parseResponse($command);
+            }
+
+            return $data;
+        default:
+            throw new Exception('Received illegal data from redis: ' . $line . "\nRedis command was: " . $command);
+    }
+}
+```
+简单来说，给redis发一个hmset命令，redis会返回
+```
++OK
+
+```
+然后在判断返回的信息是否正确
