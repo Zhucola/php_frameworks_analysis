@@ -18,7 +18,7 @@
   * 事务源码
   * 批处理查询源码
 * redis系列
-  * Connection源码
+  * [Connection源码](/yii2/%5Bredis%5DConnection源码.md)
 * 安全系列
   * 用户认证源码
 * 模型层系列
