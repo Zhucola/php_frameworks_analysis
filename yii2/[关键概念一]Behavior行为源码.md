@@ -93,3 +93,117 @@ class TestController extends Controller{
 	}
 }
 ```
+因为控制器Controller继承于Component，Component是实现行为的底层架构，使用的就是魔术方法，当调用一个不属于本类的方法会被魔术get捕获到  
+```
+//如果调用$this->age;
+
+public function __get($name)
+{
+    //会判断本类是否有getage方法，大小写不冲突    
+    $getter = 'get' . $name;
+    if (method_exists($this, $getter)) {
+        // read property, e.g. getName()
+        return $this->$getter();
+    }
+
+    //开始去找行为的age属性
+    $this->ensureBehaviors();
+    foreach ($this->_behaviors as $behavior) {
+        if ($behavior->canGetProperty($name)) {
+            return $behavior->$name;
+        }
+    }
+    //如果找不到并且本类有setage方法，报错
+    if (method_exists($this, 'set' . $name)) {
+        throw new InvalidCallException('Getting write-only property: ' . get_class($this) . '::' . $name);
+    }
+    //找不到，将异常抛出去
+    throw new UnknownPropertyException('Getting unknown property: ' . get_class($this) . '::' . $name);
+}
+```
+创建行为的方法如下，需要注意的是，如果在控制器中调用，这里的$this是控制器的
+```
+public function ensureBehaviors()
+{
+    if ($this->_behaviors === null) {
+        //初始化数组
+        $this->_behaviors = [];
+	//遍历behaviors
+        foreach ($this->behaviors() as $name => $behavior) {
+	    //注册行为
+            $this->attachBehaviorInternal($name, $behavior);
+        }
+    }
+}
+```
+默认的底层behaviors是返回一个空数组，所以我们需要重写这个方法
+```
+public function behaviors()
+{
+    return [];
+}
+```
+注册的方法如下
+```
+private function attachBehaviorInternal($name, $behavior)
+{
+    if (!($behavior instanceof Behavior)) {
+        //实例化行为对象
+        $behavior = Yii::createObject($behavior);
+    }
+    if (is_int($name)) {
+        $behavior->attach($this);
+	//追加行为
+        $this->_behaviors[] = $behavior;
+    } else {
+        //判断是否应该覆盖已注册的行为
+        if (isset($this->_behaviors[$name])) {
+            $this->_behaviors[$name]->detach();
+        }
+        $behavior->attach($this);
+        $this->_behaviors[$name] = $behavior;
+    }
+
+    return $behavior;
+}
+```
+attach和detach方法涉及到了yii2的事件概念，这里先不展开讨论，可以先理解为将行为中的事件注册或者移除
+```
+public function attach($owner)
+{
+    $this->owner = $owner;
+    foreach ($this->events() as $event => $handler) {
+        $owner->on($event, is_string($handler) ? [$this, $handler] : $handler);
+    }
+}
+public function detach()
+{
+    if ($this->owner) {
+        foreach ($this->events() as $event => $handler) {
+            $this->owner->off($event, is_string($handler) ? [$this, $handler] : $handler);
+        }
+        $this->owner = null;
+    }
+}
+```
+这里需要注意，行为底层有一个共有方法owner，不要在注册行为的类中声明owner属性，这样行为的owner会被覆盖
+```
+class Behavior extends BaseObject{
+	public $owner;
+```
+魔术get还调用了canGetProperty方法，这个方法是yii属性注入的核心方法，在base\BaseObj.php里面
+```
+public function canGetProperty($name, $checkVars = true)
+{
+    return method_exists($this, 'get' . $name) || $checkVars && property_exists($this, $name);
+}
+```
+所以如果行为类里面有非公有非静态属性，可以声明get前缀的方法
+```
+class Obj extends Behavior{
+	private $incr = 0;
+	public function getIncr(){
+		return $sex++;
+	}
+}
+```
