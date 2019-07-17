@@ -15,7 +15,7 @@ class Model extends Component implements StaticInstanceInterface, IteratorAggreg
     use ArrayableTrait;
     use StaticInstanceTrait;
 ```
-traits就是一个类可以附加多个traits，模拟了多继承，其实traits有很多事项需要注意，比如trait和class都有相同的属性需要特殊处理等等，详细的知识点可以参考PHP手册  
+traits就是一个类可以附加多个traits，模拟了多继承，其实traits有很多事项需要注意，比如trait和class都有相同的属性需要特殊处理等等，详细的知识点可以参考[PHP手册](https://www.php.net/manual/en/language.oop5.traits.php)  
 ```
 <?php
 trait t{
