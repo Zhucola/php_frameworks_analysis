@@ -207,3 +207,55 @@ class Obj extends Behavior{
 	}
 }
 ```
+除了可以覆盖behaviors方法来声明行为，还可以调用attachBehavior和attachBehaviors来注册行为
+```
+public function attachBehavior($name, $behavior)
+{
+    $this->ensureBehaviors();
+    //注册行为
+    return $this->attachBehaviorInternal($name, $behavior);
+}
+public function attachBehaviors($behaviors)
+{
+    $this->ensureBehaviors();
+    foreach ($behaviors as $name => $behavior) {
+        //注册行为
+        $this->attachBehaviorInternal($name, $behavior);
+    }
+}
+```
+如果需要移除行为，可以使用detachBehavior或者detachBehaviors方法
+```
+public function detachBehavior($name)
+{
+    $this->ensureBehaviors();
+    if (isset($this->_behaviors[$name])) {
+        $behavior = $this->_behaviors[$name];
+        unset($this->_behaviors[$name]);
+        $behavior->detach();
+        return $behavior;
+    }
+
+    return null;
+}
+public function detachBehaviors()
+{
+    $this->ensureBehaviors();
+    foreach ($this->_behaviors as $name => $behavior) {
+    	$this->detachBehavior($name);
+    }
+}
+```
+获取行为可以使用getBehavior或者getBehaviors方法，因为有属性注入，所以直接调用behaviors属性也是可以的
+```
+public function getBehavior($name)
+{
+    $this->ensureBehaviors();
+    return isset($this->_behaviors[$name]) ? $this->_behaviors[$name] : null;
+}
+public function getBehaviors()
+{
+    $this->ensureBehaviors();
+    return $this->_behaviors;
+}
+```
