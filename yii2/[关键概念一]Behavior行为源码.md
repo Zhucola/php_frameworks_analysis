@@ -39,3 +39,57 @@ $a->test(); //1
 $a->sing(); //3
 ```
 traits不能再继承了，一旦注册进类就无法移除，所以yii2的行为更加灵活
+# Behavior行为
+在项目目录创建behavior目录，创建Test.php文件
+```
+<?php
+namespace app\behaviors;
+
+use yii\base\Behavior;
+
+class Test extends Behavior
+{
+    public $name = 1;
+    protected $age = 2;
+
+    public function events()
+    {
+        return [
+        	"gogo" => "eventsgogo",
+        ];
+    }
+
+    public function sing(){
+	return __FUNCTION__;
+    }
+
+    public function getage(){
+	return $this->age;
+    }
+
+    public function eventsgogo($event){
+	echo "events";
+    }
+}
+```
+然后在控制器中将行为注册进去
+```
+use app\behaviors\Test;
+
+class TestController extends Controller{
+	public function behaviors(){
+		return [
+		    'myBehavior4' => [
+			'class' => Test::className(),
+			"name" => 21313131,
+		    ]
+		];
+    	}
+	
+	public function actionX(){
+		$this->name;   //行为的属性
+		$this->sing(); //行为的方法
+		$this->age; //行为的属性
+	}
+}
+```
