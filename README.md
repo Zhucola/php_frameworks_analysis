@@ -28,5 +28,5 @@
   * [ActiveRecord源码](yii2/%5B模型层二%5DActiveRecord源码.md)
 ****
 ## predis源码分析
-* redis-cluster模式源码
-  * [redis-cluster源码](yii2/%5B模型层一%5DModel源码.md)
+* redisCluster模式源码
+  * [redisCluster源码](yii2/%5B模型层一%5DModel源码.md)
