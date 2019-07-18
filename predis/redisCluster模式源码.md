@@ -6,9 +6,9 @@
 * [核心逻辑源码](#核心逻辑源码)
 
 # 整体运行流程
-1.初始化项目(源码很绕，有兴趣的同学可以自己去追一下，就是Client的构造方法)
-2.客户端执行set操作，根据key做slot
-    - 如果节点配置中指定了slots比如如下，就获取指定的slot对应的节点
+* 初始化项目(源码很绕，有兴趣的同学可以自己去追一下，就是Client的构造方法)
+* 客户端执行set操作，根据key做slot
+    * 如果节点配置中指定了slots比如如下，就获取指定的slot对应的节点
 ```
 $redis_list = [
         'redis://192.168.124.10:7000?slots=1-100,500-1000',
@@ -18,7 +18,7 @@ $redis_list = [
 
 $redis = new Client($redis_list, ['cluster'=>'redis']);
 ```
-    - 如果节点配置中没有指定slots或者指定的slots不匹配，就去猜一个节点，猜节点(guessNode)的算法如下
+    * 如果节点配置中没有指定slots或者指定的slots不匹配，就去猜一个节点，猜节点(guessNode)的算法如下
 ```
 $count = count($this->pool);
 $index = min((int) ($slot / (int) (16384 / $count)), $count - 1);
