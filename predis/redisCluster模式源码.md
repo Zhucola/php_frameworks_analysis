@@ -6,6 +6,26 @@
 * [核心逻辑源码](#核心逻辑源码)
 
 # 整体运行流程
+1.初始化项目(源码很绕，有兴趣的同学可以自己去追一下，就是Client的构造方法)
+2.客户端执行set操作，根据key做slot
+    - 如果节点配置中指定了slots比如如下，就获取指定的slot对应的节点
+```
+$redis_list = [
+        'redis://192.168.124.10:7000?slots=1-100,500-1000',
+        'redis://192.168.124.10:7001?slots=101-499',
+        'redis://192.168.124.10:7002?slots=1001-16384'
+];
+
+$redis = new Client($redis_list, ['cluster'=>'redis']);
+```
+    - 如果节点配置中没有指定slots或者指定的slots不匹配，就去猜一个节点，猜节点(guessNode)的算法如下
+```
+$count = count($this->pool);
+$index = min((int) ($slot / (int) (16384 / $count)), $count - 1);
+$nodes = array_keys($this->pool);
+return $nodes[$index];
+```
+
 # CRC16算法源码
 根据key获取slot的方法在predis\src\Cluster\ClusterStrategy.php里面，getSlot
 ```
@@ -133,5 +153,45 @@ private function retryCommandOnFailure(CommandInterface $command, $method)
     }
 
     return $response;
+}
+```
+由于php客户端不知道这个slot应该连接哪个redis节点，所以predis需要去猜一个节点
+```
+public function getConnection(CommandInterface $command)
+{
+    //获取slot
+    $slot = $this->strategy->getSlot($command);
+    if (!isset($slot)) {
+        throw new NotSupportedException(
+            "Cannot use '{$command->getId()}' with redis-cluster."
+        );
+    }
+
+    if (isset($this->slots[$slot])) {
+        //如果这个slot和节点有对应关系
+        return $this->slots[$slot];
+    } else {
+        //根据slot来猜一个节点
+        return $this->getConnectionBySlot($slot);
+    }
+}
+public function getConnectionBySlot($slot)
+{
+    //判断slot是否合法
+    if ($slot < 0x0000 || $slot > 0x3FFF) {
+        throw new \OutOfBoundsException("Invalid slot [$slot].");
+    }
+
+    if (isset($this->slots[$slot])) {
+        return $this->slots[$slot];
+    }
+    //猜一个节点
+    $connectionID = $this->guessNode($slot);
+    if (!$connection = $this->getConnectionById($connectionID)) {
+        $connection = $this->createConnection($connectionID);
+        $this->pool[$connectionID] = $connection;
+    }
+    //先存一个slot和猜出来的节点的对应关系
+    return $this->slots[$slot] = $connection;
 }
 ```
