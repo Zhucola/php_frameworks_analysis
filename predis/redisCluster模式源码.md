@@ -19,7 +19,7 @@ $redis = new Client($redis_list, ['cluster'=>'redis']);
 ```
 
 
-   *  如果节点配置中没有指定slots或者指定的slots不匹配，就去猜一个节点，猜节点(guessNode)的算法如下
+   * 如果节点配置中没有指定slots或者指定的slots不匹配，就去猜一个节点，猜节点(guessNode)的算法如下
     
     
 ```
