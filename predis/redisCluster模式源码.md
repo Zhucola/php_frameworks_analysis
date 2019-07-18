@@ -8,20 +8,18 @@
 # 整体运行流程
 * 初始化项目(源码很绕，有兴趣的同学可以自己去追一下，就是Client的构造方法)
 * 客户端执行set操作，根据key做slot
-    1. 如果节点配置中指定了slots比如如下，就获取指定的slot对应的节点(如50的slot会分配到7000端口，注意这个可能不是真实的redis槽的分配关系，比如redis做了槽的修改而PHP程序没有更新)
+    1. 如果节点配置中指定了slots，就获取指定的slot对应的节点(如50的slot会分配到7000端口，注意这个可能不是真实的redis槽的分配关系，比如redis做了槽的修改而PHP程序没有更新)
+    2. 如果节点配置中没有指定slots或者指定的slots不匹配，就去猜节点(guessNode)
+指定slots对节点对应关系的配置
 ```
 $redis_list = [
         'redis://192.168.124.10:7000?slots=1-100,500-1000',
         'redis://192.168.124.10:7001?slots=101-499',
-        'redis://192.168.124.10:7002?slots=1001-16384'
+        'redis://192.168.124.10:7002'
 ];
 $redis = new Client($redis_list, ['cluster'=>'redis']);
-```
-
-
-   2. 如果节点配置中没有指定slots或者指定的slots不匹配，就去猜一个节点，猜节点(guessNode)的算法如下
-    
-    
+``` 
+猜节点算法
 ```
 $count = count($this->pool);
 $index = min((int) ($slot / (int) (16384 / $count)), $count - 1);
