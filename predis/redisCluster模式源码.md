@@ -45,7 +45,7 @@ $4
     1. 如果连接失败，将该节点从配置列表中删除，然后从配置列表中随机取一个节点重新连接去做cluster slots操作，获取所有节点真实的slot信息、主从关系信息，然后重新去用真实的对应关系去匹配节点，用真实的节点重新连接
     2. 如果随机获取的节点再次连接失败，就直接失败了，代码写死了只有一次重试机会
 * 将格式化后的命令发给redis节点
-    1. 如果命令发送失败，将该节点从配置列表中删除，然后从配置列表中随机取一个节点重新连接
+    1. 如果命令发送失败，将该节点从配置列表中删除，然后从配置列表中随机取一个节点重新连接，做cluster slots，获取所有节点真实的slot信息、主从关系信息，然后重新去用真实的对应关系去匹配节点，用真实的节点重新连接，可能重新选择的节点和发生失败的节点是一个，如果再次失败就直接异常
 * 读取redis节点的响应
     1. 有MOVED情况，就是节点与slot的对应关系和真实的redis服务器不一样，处理MOVED信息，获取真实的slot和节点信息(从响应信息中获取)
         * 给MOVED的节点发cluster slots获取集群所有节点的slot信息、主从关系信息，将slot与主节点的对应关系存进变量，再次操作redis就直接用真实的对应关系获取节点了
@@ -174,7 +174,7 @@ private function retryCommandOnFailure(CommandInterface $command, $method)
 
             $this->remove($connection);
 
-            if ($failure) {
+            if ($failure) {   //注意这里下下面的$failure=true，所以如果第一次连接异常再次连接再异常的话，就直接不可用了
                 throw $exception;
             } elseif ($this->useClusterSlots) {
                 $this->askSlotsMap();
@@ -229,3 +229,184 @@ public function getConnectionBySlot($slot)
     return $this->slots[$slot] = $connection;
 }
 ```
+然后就是连接服务、发送命令、处理响应操作  
+会先将命令格式化，处理成redis能读懂的格式
+```
+public function writeRequest(CommandInterface $command)
+{
+    $commandID = $command->getId();
+    $arguments = $command->getArguments();
+
+    $cmdlen = strlen($commandID);
+    $reqlen = count($arguments) + 1;
+
+    $buffer = "*{$reqlen}\r\n\${$cmdlen}\r\n{$commandID}\r\n";
+
+    foreach ($arguments as $argument) {
+        $arglen = strlen($argument);
+        $buffer .= "\${$arglen}\r\n{$argument}\r\n";
+    }
+    $this->write($buffer);
+}
+```
+然后去连接redis
+```
+protected function tcpStreamInitializer(ParametersInterface $parameters)
+{
+    if (!filter_var($parameters->host, FILTER_VALIDATE_IP, FILTER_FLAG_IPV6)) {
+        $address = "tcp://$parameters->host:$parameters->port";
+    } else {
+        $address = "tcp://[$parameters->host]:$parameters->port";
+    }
+
+    $flags = STREAM_CLIENT_CONNECT;
+
+    if (isset($parameters->async_connect) && $parameters->async_connect) {
+        $flags |= STREAM_CLIENT_ASYNC_CONNECT;
+    }
+    if (isset($parameters->persistent)) {
+        if (false !== $persistent = filter_var($parameters->persistent, FILTER_VALIDATE_BOOLEAN, FILTER_NULL_ON_FAILURE)) {
+            $flags |= STREAM_CLIENT_PERSISTENT;
+
+            if ($persistent === null) {
+                $address = "{$address}/{$parameters->persistent}";
+            }
+        }
+    }
+    $resource = $this->createStreamSocket($parameters, $address, $flags);
+
+    return $resource;
+}
+protected function createStreamSocket(ParametersInterface $parameters, $address, $flags)
+{
+    $timeout = (isset($parameters->timeout) ? (float) $parameters->timeout : 5.0);
+    if (!$resource = @stream_socket_client($address, $errno, $errstr, $timeout, $flags)) {
+        $this->onConnectionError(trim($errstr), $errno);
+    }
+
+    if (isset($parameters->read_write_timeout)) {
+        $rwtimeout = (float) $parameters->read_write_timeout;
+        $rwtimeout = $rwtimeout > 0 ? $rwtimeout : -1;
+        $timeoutSeconds = floor($rwtimeout);
+        $timeoutUSeconds = ($rwtimeout - $timeoutSeconds) * 1000000;
+        stream_set_timeout($resource, $timeoutSeconds, $timeoutUSeconds);
+    }
+
+    if (isset($parameters->tcp_nodelay) && function_exists('socket_import_stream')) {
+        $socket = socket_import_stream($resource);
+        socket_set_option($socket, SOL_TCP, TCP_NODELAY, (int) $parameters->tcp_nodelay);
+    }
+
+    return $resource;
+}
+```
+最后发命令并读取响应
+```
+public function read()
+{
+    $socket = $this->getResource();
+    $chunk = fgets($socket);
+    if ($chunk === false || $chunk === '') {
+        $this->onConnectionError('Error while reading line from the server.');
+    }
+    $prefix = $chunk[0];
+    $payload = substr($chunk, 1, -2);
+
+    switch ($prefix) {
+        case '+':
+            return StatusResponse::get($payload);
+
+        case '$':
+            $size = (int) $payload;
+
+            if ($size === -1) {
+                return;
+            }
+
+            $bulkData = '';
+            $bytesLeft = ($size += 2);
+
+            do {
+                $chunk = fread($socket, min($bytesLeft, 4096));
+
+                if ($chunk === false || $chunk === '') {
+                    $this->onConnectionError('Error while reading bytes from the server.');
+                }
+
+                $bulkData .= $chunk;
+                $bytesLeft = $size - strlen($bulkData);
+            } while ($bytesLeft > 0);
+
+            return substr($bulkData, 0, -2);
+
+        case '*':
+            $count = (int) $payload;
+
+            if ($count === -1) {
+                return;
+            }
+
+            $multibulk = array();
+
+            for ($i = 0; $i < $count; ++$i) {
+                $multibulk[$i] = $this->read();
+            }
+
+            return $multibulk;
+
+        case ':':
+            $integer = (int) $payload;
+            return $integer == $payload ? $integer : $payload;
+
+        case '-':
+            return new ErrorResponse($payload);
+
+        default:
+            $this->onProtocolError("Unknown response prefix: '$prefix'.");
+
+            return;
+    }
+}
+```
+如果有异常，比如发生了MOVED，就会去处理报错信息
+```
+protected function onMovedResponse(CommandInterface $command, $details)
+{
+    list($slot, $connectionID) = explode(' ', $details, 2);
+    if (!$connection = $this->getConnectionById($connectionID)) {
+        $connection = $this->createConnection($connectionID);
+    }
+
+    if ($this->useClusterSlots) {
+        $this->askSlotsMap($connection);
+    }
+    $this->move($connection, $slot);
+    $response = $this->executeCommand($command);
+
+    return $response;
+}
+```
+然后用MOVED指向的真实节点去获取所有节点的槽、主从对应关系，会发送一个cluster slots命令
+```
+public function askSlotsMap(NodeConnectionInterface $connection = null)
+{
+    if (!$connection && !$connection = $this->getRandomConnection()) {
+        return array();
+    }
+    $this->resetSlotsMap();
+
+    $response = $this->queryClusterNodeForSlotsMap($connection);
+    foreach ($response as $slots) {
+        // We only support master servers for now, so we ignore subsequent
+        // elements in the $slots array identifying slaves.
+        list($start, $end, $master) = $slots;
+        if ($master[0] === '') {
+            $this->setSlots($start, $end, (string) $connection);
+        } else {
+            $this->setSlots($start, $end, "{$master[0]}:{$master[1]}");
+        }
+    }
+    return $this->slotsMap;
+}
+```
+然后会再次处理发送的set命令，再次走到executeCommand里面
