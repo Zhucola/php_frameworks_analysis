@@ -7,11 +7,11 @@
 
 # 整体运行流程
 * 初始化项目(源码很绕，有兴趣的同学可以自己去追一下，就是Client的构造方法)
-* 客户端执行set操作，根据key做slot
+* 假如客户端执行set操作，会根据key做slot，并且根据slot去获取一个节点
     1. 如果节点配置中指定了slots，就获取指定的slot对应的节点(如50的slot会分配到7000端口，注意这个可能不是真实的redis槽的分配关系，比如redis做了槽的修改而PHP程序没有更新)
-    2. 如果节点配置中没有指定slots或者指定的slots不匹配，就去猜节点(guessNode)
+    2. 如果节点配置中没有指定slots或者指定的slots不匹配，就去猜节点(guessNode)，猜节点会认为你槽分配是平均的(如有3个节点，配置列表中的第一个节点会认为是0-5469，第二个是5461-10922，第三个是10923-16383，然后用slot去匹配节点)
     
-指定slots对节点对应关系的配置
+指定slots对节点对应关系的配置如下
 ```
 $redis_list = [
         'redis://192.168.124.10:7000?slots=1-100,500-1000',
@@ -20,12 +20,26 @@ $redis_list = [
 ];
 $redis = new Client($redis_list, ['cluster'=>'redis']);
 ``` 
-猜节点算法
+猜节点算法如下
 ```
 $count = count($this->pool);
 $index = min((int) ($slot / (int) (16384 / $count)), $count - 1);
 $nodes = array_keys($this->pool);
 return $nodes[$index];
+```
+* 将set命令格式化，如果命令是
+```
+$redis->set("a",1234);
+```
+会变成
+```
+*3
+$3
+SET
+$1
+a
+$4
+1234
 ```
 
 # CRC16算法源码
