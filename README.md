@@ -7,11 +7,8 @@
 |框架|进度|
 |---|---
 |Yii2|进行中
-|Laravel|未开始
-|Lumen|未开始
-|redlock-php|已读完
-|CI3|已读完
-|verdor/composer|已读完
+|predis|进行中
+
 
 
 ## Yii2源码分析
@@ -30,4 +27,6 @@
   * [Model源码](yii2/%5B模型层一%5DModel源码.md)
   * [ActiveRecord源码](yii2/%5B模型层二%5DActiveRecord源码.md)
 ****
-## redlock-php源码分析
+## predis源码分析
+* redis-cluster模式源码
+  * [redis-cluster源码](yii2/%5B模型层一%5DModel源码.md)
