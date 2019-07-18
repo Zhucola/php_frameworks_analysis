@@ -10,6 +10,7 @@
 * 客户端执行set操作，根据key做slot
     1. 如果节点配置中指定了slots，就获取指定的slot对应的节点(如50的slot会分配到7000端口，注意这个可能不是真实的redis槽的分配关系，比如redis做了槽的修改而PHP程序没有更新)
     2. 如果节点配置中没有指定slots或者指定的slots不匹配，就去猜节点(guessNode)
+    
 指定slots对节点对应关系的配置
 ```
 $redis_list = [
