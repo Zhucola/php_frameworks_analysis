@@ -50,7 +50,7 @@ $4
 * 读取redis节点的响应
     1. 有MOVED情况，就是节点与slot的对应关系和真实的redis服务器不一样，处理MOVED信息，获取真实的slot和节点信息(从响应信息中获取)
         * 给MOVED的节点发cluster slots获取集群所有节点的slot信息、主从关系信息，然后重新用真实的槽节点去发信息
-        * 如果给MOVED节点发cluster slots失败，就配置的节点列表中删除此节点，并且随机返回一个节点去做cluster slots，然后重新发命令(有可能再次发的节点还是MOVED失败的节点，然后再次失败就是不可用了)
+        * 如果给MOVED节点发cluster slots失败，就配置的节点列表中删除此节点，并且随机返回一个节点去做cluster slots，然后重新发命令(有可能再次发的节点还是MOVED失败的节点，然后再次失败就是不可用了；或者再次发的节点是已经被提升为master的slave节点)
     2. 响应成功，收到OK
 MOVED的响应
 ```
