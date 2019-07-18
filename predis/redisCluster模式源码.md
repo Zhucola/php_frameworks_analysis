@@ -1,6 +1,9 @@
+核心逻辑源码部分可以不看，因为predis源码很绕，我就是把代码贴过来而已，有兴趣的童鞋可以自己去追下  
+
 ## 目录
 * [整体运行流程](#整体流程)
 * [CRC16算法源码](#源码分析)
+* [核心逻辑源码](#核心逻辑源码)
 
 # 整体运行流程
 # CRC16算法源码
@@ -81,5 +84,54 @@ public function hash($value)
     }
 
     return $crc;
+}
+```
+这个算法和redis算slot的结果是一样的，a的在PHP中算的slot也是15495
+```
+127.0.0.1:7001> set a 123
+-> Redirected to slot [15495] located at 127.0.0.1:7002
+OK
+```
+# 核心逻辑源码
+Cluster执行一条命令走的是predis\src\Connection\Aggregate\PredisCluster.php里面的executeCommand方法
+```
+public function executeCommand(CommandInterface $command)
+{
+    $response = $this->retryCommandOnFailure($command, __FUNCTION__);
+
+    if ($response instanceof ErrorResponseInterface) {   //move或者master不可用会执行
+        return $this->onErrorResponse($command, $response);
+    }
+
+    return $response;
+}
+```
+retryCommandOnFailure方法就是去连接客户端、执行命令、捕获异常方法，这个方法居然用到了goto，这是我第一次在PHP程序里面看到goto
+```
+private function retryCommandOnFailure(CommandInterface $command, $method)
+{
+    $failure = false;
+    RETRY_COMMAND: {
+        try {
+            $response = $this->getConnection($command)->$method($command);
+        } catch (ConnectionException $exception) {
+            $connection = $exception->getConnection();
+            $connection->disconnect();
+
+            $this->remove($connection);
+
+            if ($failure) {
+                throw $exception;
+            } elseif ($this->useClusterSlots) {
+                $this->askSlotsMap();
+            }
+
+            $failure = true;
+
+            goto RETRY_COMMAND;
+        }
+    }
+
+    return $response;
 }
 ```
