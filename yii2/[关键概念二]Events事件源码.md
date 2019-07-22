@@ -234,3 +234,97 @@ public static function eventTestStatic($events){
 在trigger源码内部，执行了call_user_func后handler会变成true，所以直接就true了  
 
 # 类级别事件处理器
+如果需要一个类的所有实例而不是一个指定的实例都响应一个被触发的事件，就需要类级别事件处理器了  
+如想要在所有继承于web\Controller的类都能使用a事件，可以写如下代码  
+```
+use yii\base\Event;
+use yii\web\Controller;
+...
+public function actionE(){
+    Event::on(Controller::class,"a",function(){echo 123;});
+    Event::trigger(TestController::class,"a");
+}
+```
+相对于实例级别的on方法，类级别的on方法维护的是一个三维数组，并且属性是静态的
+```
+public static function on($class, $name, $handler, $data = null, $append = true)
+{
+    $class = ltrim($class, '\\');
+
+    if (strpos($class, '*') !== false || strpos($name, '*') !== false) {
+        if ($append || empty(self::$_eventWildcards[$name][$class])) {
+            self::$_eventWildcards[$name][$class][] = [$handler, $data];
+        } else {
+            array_unshift(self::$_eventWildcards[$name][$class], [$handler, $data]);
+        }
+        return;
+    }
+
+    if ($append || empty(self::$_events[$name][$class])) {
+        self::$_events[$name][$class][] = [$handler, $data];
+    } else {
+        array_unshift(self::$_events[$name][$class], [$handler, $data]);
+    }
+}
+```
+删除方法也是off，和实例级别的off方法类似
+```
+public static function off($class, $name, $handler = null)
+{
+    $class = ltrim($class, '\\');
+    if (empty(self::$_events[$name][$class]) && empty(self::$_eventWildcards[$name][$class])) {
+        return false;
+    }
+    if ($handler === null) {
+        unset(self::$_events[$name][$class]);
+        unset(self::$_eventWildcards[$name][$class]);
+        return true;
+    }
+
+    // plain event names
+    if (isset(self::$_events[$name][$class])) {
+        $removed = false;
+        foreach (self::$_events[$name][$class] as $i => $event) {
+            if ($event[0] === $handler) {
+                unset(self::$_events[$name][$class][$i]);
+                $removed = true;
+            }
+        }
+        if ($removed) {
+            self::$_events[$name][$class] = array_values(self::$_events[$name][$class]);
+            return $removed;
+        }
+    }
+
+    // wildcard event names
+    $removed = false;
+    if (isset(self::$_eventWildcards[$name][$class])) {
+        foreach (self::$_eventWildcards[$name][$class] as $i => $event) {
+            if ($event[0] === $handler) {
+                unset(self::$_eventWildcards[$name][$class][$i]);
+                $removed = true;
+            }
+        }
+        if ($removed) {
+            self::$_eventWildcards[$name][$class] = array_values(self::$_eventWildcards[$name][$class]);
+            // remove empty wildcards to save future redundant regex checks :
+            if (empty(self::$_eventWildcards[$name][$class])) {
+                unset(self::$_eventWildcards[$name][$class]);
+                if (empty(self::$_eventWildcards[$name])) {
+                    unset(self::$_eventWildcards[$name]);
+                }
+            }
+        }
+    }
+
+    return $removed;
+}
+```
+类级别还有一个全部删除事件的方法
+```
+public static function offAll()
+{
+    self::$_events = [];
+    self::$_eventWildcards = [];
+}
+```
