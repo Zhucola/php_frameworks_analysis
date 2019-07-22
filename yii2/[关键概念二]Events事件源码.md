@@ -1,4 +1,32 @@
-其实事件就是将一个回调或者是类方法存在一个类属性里面(附加行为)，可以去删除某个附加的行为(删除行为)，也可以执行这个行为(执行回调或者类方法)
+其实事件就是将一个回调或者是类方法存在一个类属性里面(附加行为)，可以去删除某个附加的行为(删除行为)，也可以执行这个行为(执行回调或者类方法)  
+模拟一个简单的事件，原理和yii的一样
+```
+class obj{
+	public $events = [];
+
+	public function on($name,$func){
+		$this->events[$name] = $func;
+	}
+
+	public function off($name){
+		if(isset($this->events[$name])){
+			unset($this->events[$name]);
+		}
+	}
+
+	public function trigger($name){
+		call_user_func($this->events[$name]);
+	}
+}
+$func = function(){
+	echo 1;
+};
+$obj = new Obj();
+$obj -> on("a",$func);
+$obj -> on("b",$func);
+$obj -> off("b");
+$obj -> trigger("a");
+```
 # 附加事件处理器
 控制器中代码例子如下
 ```
