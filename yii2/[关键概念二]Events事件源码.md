@@ -35,7 +35,7 @@ public function actionE(){
         echo 1;
     };
     $this->on("a",[TestController::class,"eventTestStatic"]);
-    $this->on("b",[$this,"eventTestStatic"]);
+    $this->on("b",[$this,"eventTest"]);
     $this->on("c",function(){
         echo 2;
     });
@@ -166,7 +166,71 @@ public function actionE(){
     echo 1;
   };
   $this->on("abcd",$func);
-  $this->off("abcd",$func);//无法将abcd的回调删除
+  $this->off("abcd",$func);
 }
 ```
+触发事件为trigger方法
+```
+public function trigger($name, Event $event = null)
+{
+    //行为
+    $this->ensureBehaviors();
+
+    $eventHandlers = [];
+    foreach ($this->_eventWildcards as $wildcard => $handlers) {
+    	//正则匹配，如注册了test*事件和test1事件，在调用test1事件时候也会调用test*
+        if (StringHelper::matchWildcard($wildcard, $name)) {
+	    //事件合并
+            $eventHandlers = array_merge($eventHandlers, $handlers);
+        }
+    }
+
+    if (!empty($this->_events[$name])) {
+        $eventHandlers = array_merge($eventHandlers, $this->_events[$name]);
+    }
+
+    if (!empty($eventHandlers)) {
+        if ($event === null) {
+            $event = new Event();
+        }
+        if ($event->sender === null) {
+            $event->sender = $this;
+        }
+        $event->handled = false;
+        $event->name = $name;
+        foreach ($eventHandlers as $handler) {
+            $event->data = $handler[1];
+            call_user_func($handler[0], $event);
+	    //是否执行下一个事件了
+            if ($event->handled) {
+                return;
+            }
+        }
+    }
+
+    // invoke class-level attached handlers
+    Event::trigger($this, $name, $event);
+}
+```
+上面说过事件是按照顺序来执行的，但是可以指定handler为true，如
+```
+public function actionE(){
+    
+    $this->on("a",[TestController::class,"eventTestStatic"]);
+    $this->on("a",[$this,"eventTest"]);
+    $this->trigger("a");
+    return false;
+}
+
+public function eventTest(){
+    echo __FUNCTION__;
+}
+
+public static function eventTestStatic($events){
+    $events->handled = true;
+    echo 1;
+}
+```
+在trigger源码内部，执行了call_user_func后handler会变成true，所以直接就true了  
+
 # 类级别事件处理器
