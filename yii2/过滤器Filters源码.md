@@ -121,3 +121,75 @@ private function attachBehaviorInternal($name, $behavior)
     return $behavior;
 }
 ```
+所有的过滤器都要继承于ActionFilter类，在ActionFilter类中有attach方法，就是重新了行为Behavior的attach
+```
+public function attach($owner)
+{
+    //$owner是调用这个过滤器的类
+    $this->owner = $owner;
+    //将beforeAction事件注册进去
+    $owner->on(Controller::EVENT_BEFORE_ACTION, [$this, 'beforeFilter']);
+}
+```
+beforeAction事件注册进去后，调用beforeAction事件会执行beforeFilter方法
+```
+public function beforeFilter($event)
+{
+    //判断这个过滤器是否可用，on属性和except属性判断
+    if (!$this->isActive($event->action)) {
+        return;
+    }
+    //判断这个过滤器是否可用
+    $event->isValid = $this->beforeAction($event->action);
+    if ($event->isValid) {
+        //将afterAction事件注册进去
+        $this->owner->on(Controller::EVENT_AFTER_ACTION, [$this, 'afterFilter'], null, false);
+    } else {
+        //如果过滤器不可用，那么不会再执行相同事件
+        $event->handled = true;
+    }
+}
+```
+过滤器是可以执行on和except属性的，on属性可以写明那些方法是可以使用过滤器，except是指明那些方法不可以使用这个过滤器
+```
+protected function isActive($action)
+{
+    //获取方法名，如果是actionTest方法，$id会是test
+    $id = $this->getActionId($action);
+    if (empty($this->only)) {
+        $onlyMatch = true;
+    } else {
+        $onlyMatch = false;
+        //正则匹配是否被on属性匹配
+        foreach ($this->only as $pattern) {
+            if (StringHelper::matchWildcard($pattern, $id)) {
+                $onlyMatch = true;
+                break;
+            }
+        }
+    }
+
+    $exceptMatch = false;
+    //正则匹配是否被except属性匹配
+    foreach ($this->except as $pattern) {
+        if (StringHelper::matchWildcard($pattern, $id)) {
+            $exceptMatch = true;
+            break;
+        }
+    }
+
+    return !$exceptMatch && $onlyMatch;
+}
+```
+每个过滤器都会有beforeAction方法，如Ajax过滤器
+```
+public function beforeAction($action)
+{
+    //如果请求不是以ajax发过来的会直接抛异常
+    if ($this->request->getIsAjax()) {
+        return true;
+    }
+
+    throw new BadRequestHttpException($this->errorMessage);
+}
+```
