@@ -158,3 +158,152 @@ public function get($key)
     return false;
 }
 ```
+Cache的get、set会执行真正缓存相关类的getValue、setValue
+```
+protected function setValue($key, $value, $duration)
+{
+    //gc逻辑
+    $this->gc();
+    //获取缓存文件绝对路径
+    $cacheFile = $this->getCacheFile($key);
+    if ($this->directoryLevel > 0) {
+        //缓存文件深度
+        @FileHelper::createDirectory(dirname($cacheFile), $this->dirMode, true);
+    }
+    if (is_file($cacheFile) && function_exists('posix_geteuid') && fileowner($cacheFile) !== posix_geteuid()) {
+        @unlink($cacheFile);
+    }
+    if (@file_put_contents($cacheFile, $value, LOCK_EX) !== false) {
+        if ($this->fileMode !== null) {
+            @chmod($cacheFile, $this->fileMode);
+        }
+        if ($duration <= 0) {
+            $duration = 31536000; // 1 year
+        }
+        //更新修改时间
+        return @touch($cacheFile, $duration + time());
+    }
+
+    $error = error_get_last();
+    Yii::warning("Unable to write cache file '{$cacheFile}': {$error['message']}", __METHOD__);
+    return false;
+}
+```
+缓存文件是有深度的，会根据key来做深度
+```
+protected function getCacheFile($key)
+{
+    if ($this->directoryLevel > 0) {
+        $base = $this->cachePath;
+        for ($i = 0; $i < $this->directoryLevel; ++$i) {
+            if (($prefix = substr($key, $i + $i, 2)) !== false) {
+                $base .= DIRECTORY_SEPARATOR . $prefix;
+            }
+        }
+
+        return $base . DIRECTORY_SEPARATOR . $key . $this->cacheFileSuffix;
+    }
+
+    return $this->cachePath . DIRECTORY_SEPARATOR . $key . $this->cacheFileSuffix;
+}
+```
+设置缓存有几率走gc操作，也可以使用flush方法来强制执行gc
+```
+public function gc($force = false, $expiredOnly = true)
+{
+    if ($force || mt_rand(0, 1000000) < $this->gcProbability) {
+        $this->gcRecursive($this->cachePath, $expiredOnly);
+    }
+}
+protected function gcRecursive($path, $expiredOnly)
+{
+    if (($handle = opendir($path)) !== false) {
+        while (($file = readdir($handle)) !== false) {
+            if ($file[0] === '.') {
+                continue;
+            }
+            $fullPath = $path . DIRECTORY_SEPARATOR . $file;
+            if (is_dir($fullPath)) {
+                $this->gcRecursive($fullPath, $expiredOnly);
+                if (!$expiredOnly) {
+                    if (!@rmdir($fullPath)) {
+                        $error = error_get_last();
+                        Yii::warning("Unable to remove directory '{$fullPath}': {$error['message']}", __METHOD__);
+                    }
+                }
+            } elseif (!$expiredOnly || $expiredOnly && @filemtime($fullPath) < time()) {
+                if (!@unlink($fullPath)) {
+                    $error = error_get_last();
+                    Yii::warning("Unable to remove file '{$fullPath}': {$error['message']}", __METHOD__);
+                }
+            }
+        }
+        closedir($handle);
+    }
+}
+```
+getValue方法比较简单
+```
+protected function getValue($key)
+{
+    $cacheFile = $this->getCacheFile($key);
+
+    if (@filemtime($cacheFile) > time()) {
+        $fp = @fopen($cacheFile, 'r');
+        if ($fp !== false) {
+            @flock($fp, LOCK_SH);
+            $cacheValue = @stream_get_contents($fp);
+            @flock($fp, LOCK_UN);
+            @fclose($fp);
+            return $cacheValue;
+        }
+    }
+
+    return false;
+}
+```
+# Redis缓存
+使用Redis缓存需要安装yii-redis，相关的redis基本源码可以参考
+Redis缓存是可以使用从读主写模式的，默认是无主从关系，需要配置
+```
+public function actionTest(){
+    $cache = Yii::$app->get("cache");
+    $cache->enableReplicas = true;
+    $cache->replicas = [
+        ['hostname' => '192.168.124.10','port' => 6380,'database' => 0],  //也可以在web.php中配置cache信息
+    ];
+    $key = [3,4,5];
+    $value = [1,2,3];
+    $cache->set($key,$value);   //写操作走6379，在web.php中配置的cache信息
+    var_dump($cache->get($key));
+}
+```
+获取从节点的代码如下
+```
+protected function getReplica()
+{
+    if ($this->enableReplicas === false) {
+        return $this->redis;
+    }
+    if ($this->_replica !== null) {
+        return $this->_replica;
+    }
+
+    if (empty($this->replicas)) {
+        return $this->_replica = $this->redis;
+    }
+
+    $replicas = $this->replicas;
+    //打乱顺序
+    shuffle($replicas);
+    $config = array_shift($replicas);
+    $this->_replica = Instance::ensure($config, Connection::className());
+    return $this->_replica;
+}
+```
+因为使用了redis组件，所以redis属性可以直接操作各种原始方法
+```
+$cache = Yii::$app->get("cache");
+$cache -> redis -> get("a");
+```
+其他cache相关的get、set等操作其实就是redis的原始操作
