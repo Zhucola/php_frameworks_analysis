@@ -263,7 +263,7 @@ protected function getValue($key)
 }
 ```
 # Redis缓存
-使用Redis缓存需要安装yii-redis，相关的redis基本源码可以参考
+使用Redis缓存需要安装yii-redis，相关的redis基本源码可以参考(yii2/%5Bredis%5DConnection源码.md)
 Redis缓存是可以使用从读主写模式的，默认是无主从关系，需要配置
 ```
 public function actionTest(){
