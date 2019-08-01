@@ -5,7 +5,7 @@
 * [执行流程](#执行流程)
 * [源码分析](#源码分析)
 
-# [HttpCache基本知识]
+# HttpCache基本知识
 [HttpCache基本知识](https://github.com/Zhucola/advanced-nginx/blob/master/HTTP%E7%BC%93%E5%AD%98%E4%B8%8Eheader%E6%A8%A1%E5%9D%97.md)
 # 执行流程
 - 判断HttpCache是否可用，根据请求方法和lastModify、etagSeed回调
