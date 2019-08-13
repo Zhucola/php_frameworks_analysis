@@ -71,9 +71,17 @@ ok
 ||client A|client B|
 |:---|:---|:---|
 |1|随机生成锁的值为rand1，set lock rand1 nx px 3000获得锁成功||
-|2||随机生成锁的值为rand2，set lock ran2 nx px abcd 第1500毫秒，获得锁失败|
+|2||随机生成锁的值为rand2，set lock rand2 nx px abcd 第1500毫秒，获得锁失败|
 |3|第2000毫秒，业务逻辑处理完毕，执行删除lua脚本，命令在网络上发生阻塞，没有传递给redis客户端||
 |4||第2200毫秒，随机生成锁的值为rand3，set lock rand3 nx px 3000 获得锁失败，因为redis没有收到client A的del操作|
 |5||第4000毫秒，随机生成锁的值为rand4，set lock rand4 nx px 3000获得锁成功|
-|6|lua脚本被redis接受，因为值不相同所有删除失败|lock未超时，client B未处理完业务逻辑|
+|6|lua脚本被redis接受，因为值不相同所以删除失败|lock未超时，client B未处理完业务逻辑|
 |7|随机生成锁的值为rand5，set lock rand5 nx px 3000获得锁失败||
+
+# 多节点轮流请求的超时时间
+因为不能使用单机、主从和cluster，所以我们使用多节点，每个节点都不能有主从，当请求有count(servers_map) / 2 + 1个数量成功则认为是获取锁成功  
+如有5个redis节点，4个节点都成功set了，就认为获取锁成功  
+  
+||redis A|redis B|redis C|redis D|redis E|
+|:---|:---|:---|:---|:---|:---|
+|1|set lock 1234 nx px 3000获得锁成功|set lock 1234 nx px 3000获得锁成功|set lock rand nx px 3000获得锁成功|set lock 1234 nx px 3000获得锁失败|set lock 1234 nx px 3000获得锁成功|
