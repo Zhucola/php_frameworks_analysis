@@ -42,4 +42,4 @@
   * [redisCluster源码](/predis/redisCluster模式源码.md)
 
 ## RedLock源码分析
-  * [RedLock源码分析](/predis/redisCluster模式源码.md)
+  * [RedLock源码分析](/RedLock分布式锁/README.md)
