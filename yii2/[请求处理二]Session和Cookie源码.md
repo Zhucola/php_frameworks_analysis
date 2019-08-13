@@ -2,6 +2,7 @@
 * [Session](#Session)
 * [Flash数据](#Flash数据)
 * [Redis_Session](#Redis_Session)
+* [Cookie](#Cookie)
 
 # Session 
   Sesssion组件默认在config/web.php是没有配置的，在Application底层代码中会走默认的依赖配置
@@ -333,3 +334,128 @@ public function getTimeout()
     return (int) ini_get('session.gc_maxlifetime');
 }
 ```
+# Cookie
+  Yii的Cookie组件分为请求Cookie和响应Cookie
+```
+//获取请求的cookie
+$request_cookies = Yii::$app->request->cookies;
+//响应的cookie
+$response_cookies = Yii::$app->response->cookies;
+```
+因为cookie有加密操作，所以先从发送一个cookie开始说起  
+```
+$response_cookies = Yii::$app->response->cookies;
+$response_cookies->add(new \yii\web\Cookie([
+    'name' => 'language',
+    'value' => 'zh-CN',
+]));
+```
+响应的cookie会从Response组件中获取
+```
+//yiisoft/yii2/web/Response.php
+public function getCookies()
+{
+    if ($this->_cookies === null) {
+        $this->_cookies = new CookieCollection();
+    }
+
+    return $this->_cookies;
+}
+```
+add操作会实例化一个Cookie类
+```
+class Cookie extends \yii\base\BaseObject
+{
+    public $name;
+
+    public $value = '';
+
+    public $domain = '';
+
+    public $expire = 0;
+
+    public $path = '/';
+
+    public $secure = false;
+
+    public $httpOnly = true;
+
+    public function __toString()
+    {
+        return (string) $this->value;
+    }
+}
+```
+可见默认的httponly为true，secure为false等 
+add操作就是将Cookie类添加进CookieCollection  
+```
+public function add($cookie)
+{
+    if ($this->readOnly) {
+        throw new InvalidCallException('The cookie collection is read only.');
+    }
+    $this->_cookies[$cookie->name] = $cookie;
+}
+```
+添加了一个cookie后，也可以删除它，因为Response组件的Cookie的readOnly属性是false
+```
+public function remove($cookie, $removeFromBrowser = true)
+{
+    if ($this->readOnly) {
+        throw new InvalidCallException('The cookie collection is read only.');
+    }
+    if ($cookie instanceof Cookie) {
+        $cookie->expire = 1;   //过期时间为1，就是删除
+        $cookie->value = '';
+    } else {
+        $cookie = Yii::createObject([
+            'class' => 'yii\web\Cookie',
+            'name' => $cookie,
+            'expire' => 1,
+        ]);
+    }
+    if ($removeFromBrowser) {
+        $this->_cookies[$cookie->name] = $cookie;
+    } else {
+        unset($this->_cookies[$cookie->name]);
+    }
+}
+```
+最后响应的时候，会走到Response组件的sendCookies，会对cookie进行加密操作
+```
+protected function sendCookies()
+{
+    if ($this->_cookies === null) {
+        return;
+    }
+    $request = Yii::$app->getRequest();
+    if ($request->enableCookieValidation) {
+        if ($request->cookieValidationKey == '') {
+            throw new InvalidConfigException(get_class($request) . '::cookieValidationKey must be configured with a secret key.');
+        }
+        $validationKey = $request->cookieValidationKey;
+    }
+    foreach ($this->getCookies() as $cookie) {
+        $value = $cookie->value;
+        if ($cookie->expire != 1 && isset($validationKey)) {
+            //加密
+            $value = Yii::$app->getSecurity()->hashData(serialize([$cookie->name, $value]), $validationKey);
+        }
+        setcookie($cookie->name, $value, $cookie->expire, $cookie->path, $cookie->domain, $cookie->secure, $cookie->httpOnly);
+    }
+}
+```
+加密的方式默认是sha256
+```
+public function hashData($data, $key, $rawHash = false)
+{
+    //$this->macHash默认是sha256
+    $hash = hash_hmac($this->macHash, $data, $key, $rawHash);
+    if (!$hash) {
+        throw new InvalidConfigException('Failed to generate HMAC with hash algorithm: ' . $this->macHash);
+    }
+
+    return $hash . $data;
+}
+```
+也就是说会用配置文件中的cookieValidationKey，去对serialize([$cookie->name, $value])做sha256加密，返回的结果是响应的cookie值
