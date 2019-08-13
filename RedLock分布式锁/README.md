@@ -35,4 +35,16 @@
 |2||set lock 1234 nx px 3000 第1500毫秒，获得锁失败|
 |3|第2000毫秒，业务逻辑处理完毕，del lock||
 |4||第2200毫秒，set lock 1234 nx px 3000 获得锁成功|
-
+  
+以上情况开起来很美好，但是考虑如下情况  
+||client A|client B|
+|:---|:---|:---|
+|1|set lock 1234 nx px 3000获得锁成功||
+|2||set lock 1234 nx px 3000 第1500毫秒，获得锁失败|
+|3|第2000毫秒，业务逻辑处理完毕，del lock，命令在网络上发生阻塞，没有传递给redis客户端||
+|4||第2200毫秒，set lock 1234 nx px 3000 获得锁失败，因为redis没有收到client A的del操作|
+[5]|第4000毫秒，set lock 1234 nx px 3000获得锁成功|
+[6]del命令被redis接受|lock未超时，client B未处理完业务逻辑|
+[7]set lock 1234 nx px 3000获得锁成功||
+  
+可见这种删除操作无法做到互斥性，client A将client B拿到的锁给删除了
