@@ -549,5 +549,11 @@ cookie的加密逻辑为
 - 如果cookie的键是name，值是yii，cookieValidationKey为abcd
 - 做$value = hash_hmac("sha256", serialize(["name","yii"]), "abcd", false);
 - 实际响应的为setcookie("name",$value.serialize(["name","yii"]))
+  
 cookie的加密验证逻辑为
 - 如果cookie的键是name，值是yii，cookieValidationKey为abcd
+- 获取$test = hash_hmac("sha256", '', '', false);
+- 获取$test的长度
+- 截取请求cookie值的0-len($test)，$hash = StringHelper::byteSubstr($data, 0, $hashLength);
+- 截取出serialize的值StringHelper::byteSubstr($data, $hashLength, null);
+- 将serialize的值加密，然后对比是否与$hash相同
