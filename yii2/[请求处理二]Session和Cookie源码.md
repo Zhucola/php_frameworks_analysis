@@ -458,4 +458,96 @@ public function hashData($data, $key, $rawHash = false)
     return $hash . $data;
 }
 ```
-也就是说会用配置文件中的cookieValidationKey，去对serialize([$cookie->name, $value])做sha256加密，返回的结果是响应的cookie值
+也就是说会用配置文件中的cookieValidationKey，去对serialize([$cookie->name, $value])做sha256加密，然后拼上data，返回的结果是响应的cookie值  
+如果要获取一个请求的cookie，需要从Request组件中获取
+```
+$cookies = Yii::$app->request->cookies;
+$cookies -> get("a");
+$cookies -> getValue("b","b value");
+```
+相应的源码为
+```
+public function getCookies()
+{
+    if ($this->_cookies === null) {
+        $this->_cookies = new CookieCollection($this->loadCookies(), [
+            'readOnly' => true,
+        ]);
+    }
+
+    return $this->_cookies;
+}
+protected function loadCookies()
+{
+    $cookies = [];
+    if ($this->enableCookieValidation) {
+        if ($this->cookieValidationKey == '') {
+            throw new InvalidConfigException(get_class($this) . '::cookieValidationKey must be configured with a secret key.');
+        }
+        foreach ($_COOKIE as $name => $value) {
+            if (!is_string($value)) {
+                continue;
+            }
+            //对请求的cookie做加密验证
+            $data = Yii::$app->getSecurity()->validateData($value, $this->cookieValidationKey);
+            if ($data === false) {
+                continue;
+            }
+            if (defined('PHP_VERSION_ID') && PHP_VERSION_ID >= 70000) {
+                $data = @unserialize($data, ['allowed_classes' => false]);
+            } else {
+                $data = @unserialize($data);
+            }
+            if (is_array($data) && isset($data[0], $data[1]) && $data[0] === $name) {
+                $cookies[$name] = Yii::createObject([
+                    'class' => 'yii\web\Cookie',
+                    'name' => $name,
+                    'value' => $data[1],
+                    'expire' => null,
+                ]);
+            }
+        }
+    } else {
+        foreach ($_COOKIE as $name => $value) {
+            $cookies[$name] = Yii::createObject([
+                'class' => 'yii\web\Cookie',
+                'name' => $name,
+                'value' => $value,
+                'expire' => null,
+            ]);
+        }
+    }
+
+    return $cookies;
+}
+```
+可以请求的cookie需要做加密校验的，逻辑为
+```
+public function validateData($data, $key, $rawHash = false)
+{
+    $test = @hash_hmac($this->macHash, '', '', $rawHash);
+    if (!$test) {
+        throw new InvalidConfigException('Failed to generate HMAC with hash algorithm: ' . $this->macHash);
+    }
+    $hashLength = StringHelper::byteLength($test);
+    if (StringHelper::byteLength($data) >= $hashLength) {
+        $hash = StringHelper::byteSubstr($data, 0, $hashLength);
+
+        $pureData = StringHelper::byteSubstr($data, $hashLength, null);
+
+        $calculatedHash = hash_hmac($this->macHash, $pureData, $key, $rawHash);
+
+        if ($this->compareString($hash, $calculatedHash)) {
+            return $pureData;
+        }
+    }
+
+    return false;
+}
+```
+cookie的加密逻辑为  
+- 如果cookie的键是name，值是yii，cookieValidationKey为abcd
+- 做$value = hash_hmac("sha256", serialize(["name","yii"]), "abcd", false);
+- 实际响应的为setcookie("name",$value.serialize(["name","yii"]))
+cookie的加密验证逻辑为
+- 如果cookie的键是name，值是yii，cookieValidationKey为abcd
