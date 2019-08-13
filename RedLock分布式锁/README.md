@@ -49,3 +49,30 @@
 |7|set lock 1234 nx px 3000获得锁成功||
   
 可见这种删除操作无法做到互斥性，client A将client B拿到的锁给删除了
+# 删除锁操作的改进
+每次生成lock的值都是随机的，然后使用lua脚本来删除，这个删除操作是一个原子性操作
+```
+if redis.call("GET", KEYS[1]) == ARGV[1] then
+    return redis.call("DEL", KEYS[1])
+else
+    return 0
+end
+```
+使用redis监视器可以查看到这个lua脚本的执行过程
+```
+127.0.0.1:6380> monitor
+ok
+1565688900.609818 [0 127.0.0.1:34344] "EVAL" "\r\n    if redis.call(\"GET\", KEYS[1]) == ARGV[1] then\r\n        return redis.call(\"DEL\", KEYS[1])\r\n    else\r\n        return 0\r\n    end" "1" "aaa" "bbb"
+1565688900.609912 [0 lua] "GET" "aaa"
+1565688900.609918 [0 lua] "DEL" "aaa"
+```
+流程改进如下
+||client A|client B|
+|:---|:---|:---|
+|1|随机生成锁的值为rand1，set lock rand1 nx px 3000获得锁成功||
+|2||随机生成锁的值为rand2，set lock ran2 nx px abcd 第1500毫秒，获得锁失败|
+|3|第2000毫秒，业务逻辑处理完毕，执行删除lua脚本，命令在网络上发生阻塞，没有传递给redis客户端||
+|4||第2200毫秒，随机生成锁的值为rand3，set lock rand3 nx px 3000 获得锁失败，因为redis没有收到client A的del操作|
+|5||第4000毫秒，随机生成锁的值为rand4，set lock rand4 nx px 3000获得锁成功|
+|6|lua脚本被redis接受，因为值不相同所有删除失败|lock未超时，client B未处理完业务逻辑|
+|7|随机生成锁的值为rand5，set lock rand5 nx px 3000获得锁失败||
