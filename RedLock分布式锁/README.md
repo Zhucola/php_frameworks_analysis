@@ -14,12 +14,13 @@
 |2||set lock 1234 nx px 3000 3000毫秒内，获得锁失败|
 |3||set lock 1234 nx px 3000 3000毫秒外，获得锁成功，master同步给slave|
 |4|set lock 1234 nx px 3000 3000毫秒外，获得锁成功，master宕机，lock未同步给slave，slave升级为master||
-|5||set lock 1234 nx px 3000 3000毫秒内，获得锁成功|
+|5||set lock 1234 nx px 3000 3000毫秒内，获得锁成功，因为新的master没有lock锁|
   
 由于redis主从是异步复制  
 - 客户端发送写命令给master
 - master执行写命令，将结果返回给客户端
 - 执行成功则master将命令同步给slave
+  
 可见在主从模式下锁会造成互斥性失效
 
 # 集群模式下的redis锁
