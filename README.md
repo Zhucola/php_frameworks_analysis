@@ -7,7 +7,7 @@
 |框架|进度|
 |---|---
 |Yii2|进行中
-|predis|进行中
+|predis|已完成
 |RedLock|已完成
 
 
