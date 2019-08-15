@@ -1,3 +1,13 @@
+
+## 目录
+* [单机模式下的redis锁](#单机模式下的redis锁)
+* [主从模式下的redis锁](#主从模式下的redis锁)
+* [集群模式下的redis锁](#集群模式下的redis锁)
+* [删除锁操作](#删除锁操作)
+* [删除锁操作的改进](#删除锁操作的改进)
+* [多节点轮流请求的超时时间](#多节点轮流请求的超时时间)
+* [php版本redlock源码](#php版本redlock源码)
+
 # 单机模式下的redis锁
 ||client A|client B|
 |:---|:---|:---|
@@ -89,6 +99,137 @@ ok
   
   因为是轮流请求redis节点的，会造成请求拿锁的时机超过锁的超时时间情况
   - 锁超时时间为2秒
-  - 轮流请求5个redis节点，4个节点锁成功，但是一共用时5秒
-  - 认为拿锁成功，其他客户端同样可以拿到锁
+  - 轮流请求5个redis节点，前4个节点锁成功，共用时1秒，第5个节点用时3秒
+  - 认为拿锁成功，其他客户端同样可以拿到锁，但是前4个节点的锁已经过期
+    
+  解决方案是记录拿锁请求开始时间和拿锁结束时间，对比超时时间  
+  - 记录请求开始时间  
+  - 锁超时时间为2秒
+  - 轮流请求5个redis节点，前4个节点锁成功，共用时1秒，第5个节点用时3秒，共用时4秒
+  - 记录请求结束时间
+  - 因为总请求5秒大于锁超时2秒时间，所以认为拿锁失败
+  - 轮流放锁
  
+ # php版本redlock源码
+ 客户端demo如下
+ ```
+ <?php
+
+require_once __DIR__ . './src/RedLock.php';
+
+$servers = [
+    ['192.168.124.10', 6379,1],
+    ['192.168.124.10', 6379,1],
+    ['192.168.124.10', 6379,1],
+];
+
+$redLock = new RedLock($servers);
+
+while (true) {
+    $lock = $redLock->lock('test', 10000);
+    if ($lock) {
+        print_r($lock);
+    } else {
+        print "Lock not acquired\n";
+    }
+    sleep(1);
+}
+
+```
+构造函数如下
+```
+function __construct(array $servers, $retryDelay = 200, $retryCount = 3)
+{
+    //拿锁的redis节点列表
+    $this->servers = $servers;
+    //拿锁失败重试的间隔时间
+    $this->retryDelay = $retryDelay;
+    //拿锁失败的重试次数
+    $this->retryCount = $retryCount;
+    //多少个服务器拿锁成功就认为拿锁成功
+    $this->quorum  = min(count($servers), (count($servers) / 2 + 1));
+}
+```
+拿锁操作
+```
+public function lock($resource, $ttl)
+{
+    //实例化redis
+    $this->initInstances();
+    //生成随机的值
+    $token = uniqid();
+
+    $retry = $this->retryCount;
+
+    do {
+        $n = 0;
+
+        $startTime = microtime(true) * 1000;
+        //循环拿锁
+        foreach ($this->instances as $instance) {
+            if ($this->lockInstance($instance, $resource, $token, $ttl)) {
+                $n++;
+            }
+        }
+
+        //锁超时时间的一个偏移量
+        $drift = ($ttl * $this->clockDriftFactor) + 2;
+        //拿锁请求的时间间隔
+        $validityTime = $ttl - (microtime(true) * 1000 - $startTime) - $drift;
+        //判断是否拿锁成功
+        if ($n >= $this->quorum && $validityTime > 0) {
+            return [
+                'validity' => $validityTime,
+                'resource' => $resource,
+                'token'    => $token,
+            ];
+
+        } else {
+            //放锁操作
+            foreach ($this->instances as $instance) {
+                $this->unlockInstance($instance, $resource, $token);
+            }
+        }
+
+        //重试时间间隔
+        $delay = mt_rand(floor($this->retryDelay / 2), $this->retryDelay);
+        usleep($delay * 1000);
+
+        $retry--;
+
+    } while ($retry > 0);
+
+    return false;
+}
+```
+锁命令
+```
+private function lockInstance($instance, $resource, $token, $ttl)
+{
+    return $instance->set($resource, $token, ['NX', 'PX' => $ttl]);
+}
+```
+放锁操作
+```
+public function unlock(array $lock)
+{
+    $this->initInstances();
+    $resource = $lock['resource'];
+    $token    = $lock['token'];
+
+    foreach ($this->instances as $instance) {
+        $this->unlockInstance($instance, $resource, $token);
+    }
+}
+private function unlockInstance($instance, $resource, $token)
+{
+    $script = '
+        if redis.call("GET", KEYS[1]) == ARGV[1] then
+            return redis.call("DEL", KEYS[1])
+        else
+            return 0
+        end
+    ';
+    return $instance->eval($script, [$resource, $token], 1);
+}
+```
