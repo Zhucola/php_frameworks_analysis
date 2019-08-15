@@ -18,10 +18,9 @@
 通过哨兵获取master节点，发送写命令，但是此时master节点已经变成了slave节点，不可写问题  
   循环从哨兵获取节点信息多次，然后重试发送命令操作，通过哨兵会获取新的节点关系信息   
   
-# 整体运行流程
-redis搭建了3个哨兵，分别为26379、26380、26381端口，master节点为6379，两个slave分别为6380和6381  
-需要注意的是哨兵和redis节点的bind都不能绑定127.0.0.1，因为客户端通过哨兵获取的主、从节点host会变成127.0.0.1，然后客户端连接不上127.0.0.1  
-
+以上问题predis框架都进行了处理  
+# predis存在的问题
+如果配置为如下
 ```
 <?php
 set_time_limit(0);
@@ -42,6 +41,14 @@ $client = new Predis\Client($sentinels, $options);
 $client -> set("name",123);
 $client -> get("name");
 ```
+每次predis会通过第一个哨兵配置去获取主从节点信息，第一个哨兵压力很大，可以优化为
+```
+$sentinels = shuffle(['tcp://192.168.124.10:26379', 'tcp://192.168.124.10:26380', 'tcp://192.168.124.10:26381']);
+```
+# 整体运行流程
+redis搭建了3个哨兵，分别为26379、26380、26381端口，master节点为6379，两个slave分别为6380和6381  
+需要注意的是哨兵和redis节点的bind都不能绑定127.0.0.1，因为客户端通过哨兵获取的主、从节点host会变成127.0.0.1，然后客户端连接不上127.0.0.1  
+
 * 初始化predis项目
 * 判断是否已经有连接过的redis接点，获取命令是可读还是可写
   1. 如果节点是master则直接使用master节点去读写 
@@ -54,3 +61,169 @@ $client -> get("name");
 - 向redis节点发送命令
 - 如果redis节点异常，则默认停止1秒，继续连接哨兵获取节点，然后使用获取的节点发送命令，重试20秒
 
+# 核心逻辑源码
+获取节点发送命令  
+```
+private function retryCommandOnFailure(CommandInterface $command, $method)
+{
+    $retries = 0;
+    SENTINEL_RETRY: {
+        try {
+            $response = $this->getConnection($command)->$method($command);
+        } catch (CommunicationException $exception) {
+	    //这里是redis节点异常重试机制
+            $this->wipeServerList();
+            $exception->getConnection()->disconnect();
+            //默认重试20次
+            if ($retries == $this->retryLimit) {
+                throw $exception;
+            }
+            //默认每次重试停止1秒，让哨兵进行故障转移
+            usleep($this->retryWait * 1000);
+
+            ++$retries;
+            goto SENTINEL_RETRY;
+        }
+    }
+
+    return $response;
+}
+```
+获取redis节点
+```
+public function getConnection(CommandInterface $command)
+{
+    //获取redis节点
+    $connection = $this->getConnectionInternal($command);
+    if (!$connection->isConnected()) {
+        // When we do not have any available slave in the pool we can expect
+        // read-only operations to hit the master server.
+        $expectedRole = $this->strategy->isReadOperation($command) && $this->slaves ? 'slave' : 'master';
+        $this->assertConnectionRole($connection, $expectedRole);
+    }
+
+    return $connection;
+}
+private function getConnectionInternal(CommandInterface $command)
+{
+    //如果还没有连接过的redis节点
+    if (!$this->current) {
+        //判断命令是可读还是可写，读命令连slave，写命令连master
+        if ($this->strategy->isReadOperation($command) && $slave = $this->pickSlave()) {
+            $this->current = $slave;
+        } else {
+            $this->current = $this->getMaster();
+        }
+        return $this->current;
+    }
+    //如果连接过redis节点，并且是master节点
+    if ($this->current === $this->master) {
+        return $this->current;
+    }
+    //如果连接的是slave redis节点，并且命令是写操作
+    if (!$this->strategy->isReadOperation($command)) {
+        //重新连接master节点
+        $this->current = $this->getMaster();
+    }
+
+    return $this->current;
+}
+```
+通过哨兵获取节点信息
+```
+public function getSentinelConnection()
+{
+    if (!$this->sentinelConnection) {
+        if (!$this->sentinels) {
+            throw new \Predis\ClientException('No sentinel server available for autodiscovery.');
+        }
+	//从哨兵配置列表中获取第一个哨兵，并且移除
+        $sentinel = array_shift($this->sentinels);
+        $this->sentinelConnection = $this->createSentinelConnection($sentinel);
+    }
+
+    return $this->sentinelConnection;
+}
+protected function querySentinelForMaster(NodeConnectionInterface $sentinel, $service)
+{
+    //向哨兵发送sentinel get-master-addr-by-name $service命令，获取master
+    节点信息
+    $payload = $sentinel->executeCommand(
+        RawCommand::create('SENTINEL', 'get-master-addr-by-name', $service)
+    );
+    if ($payload === null) {
+        throw new ServerException('ERR No such master with that name');
+    }
+
+    if ($payload instanceof ErrorResponseInterface) {
+        $this->handleSentinelErrorResponse($sentinel, $payload);
+    }
+
+    return array(
+        'host' => $payload[0],
+        'port' => $payload[1],
+        'alias' => 'master',
+    );
+}
+public function getMaster()
+{
+    if ($this->master) {
+        return $this->master;
+    }
+    if ($this->updateSentinels) {
+        $this->updateSentinels();
+    }
+
+    SENTINEL_QUERY: {
+        $sentinel = $this->getSentinelConnection();
+        try {
+	    //获取主节点信息
+            $masterParameters = $this->querySentinelForMaster($sentinel, $this->service);
+            $masterConnection = $this->connectionFactory->create($masterParameters);
+            $this->add($masterConnection);
+        } catch (ConnectionException $exception) {
+            $this->sentinelConnection = null;
+
+            goto SENTINEL_QUERY;
+        }
+    }
+
+    return $masterConnection;
+}
+public function getSlaves()
+{
+    if ($this->slaves) {
+        return array_values($this->slaves);
+    }
+
+    if ($this->updateSentinels) {
+        $this->updateSentinels();
+    }
+
+    SENTINEL_QUERY: {
+        $sentinel = $this->getSentinelConnection();
+
+        try {
+	    //获取slave节点信息
+            $slavesParameters = $this->querySentinelForSlaves($sentinel, $this->service);
+            //将所有slave节点信息添加进属性里面
+            foreach ($slavesParameters as $slaveParameters) {
+                $this->add($this->connectionFactory->create($slaveParameters));
+            }
+        } catch (ConnectionException $exception) {
+            $this->sentinelConnection = null;
+
+            goto SENTINEL_QUERY;
+        }
+    }
+
+    return array_values($this->slaves ?: array());
+}
+protected function pickSlave()
+{
+    if ($slaves = $this->getSlaves()) {
+        //会随机拿一个slave节点
+        return $slaves[rand(1, count($slaves)) - 1];
+    }
+}
+```
