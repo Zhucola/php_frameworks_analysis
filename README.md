@@ -9,8 +9,12 @@
 |Yii2|进行中
 |predis|已完成
 |RedLock|已完成
+|phpfpm管理脚本|已完成
 
-
+## phpfpm管理脚本
+  * [记录一次平滑重启reload的坑]()
+  * [管理源码]()
+  
 ## Yii2源码分析
 * 关键概念
   * [Behavior行为源码](yii2/%5B关键概念一%5DBehavior行为源码.md)
