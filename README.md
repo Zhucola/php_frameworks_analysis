@@ -4,13 +4,6 @@
 :smiling_imp::smiling_imp::smiling_imp: 
 
 
-|框架|进度|
-|---|---
-|Yii2|进行中
-|predis|已完成
-|RedLock|已完成
-|phpfpm管理脚本|已完成
-
 ## phpfpm管理脚本
   * [记录一次平滑重启reload的坑]()
   * [管理源码]()
