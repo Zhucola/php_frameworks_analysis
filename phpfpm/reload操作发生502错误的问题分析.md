@@ -39,3 +39,5 @@ kill -USR2 `cat /tmp/php-fpm-master1.pid`
 [root@localhost etc]# cat /tmp/php-fpm-master1.pid                                                
 4425
 ```
+难道reload不是平滑重启？？？？？很惊讶，找了各种资料发现这个问题已经有人提给过php官方
+https://bugs.php.net/bug.php?id=60961
