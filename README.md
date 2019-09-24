@@ -12,7 +12,7 @@
 |phpfpm管理脚本|
 
 ## workerman源码分析
-  * [daemonize源码实现](workerman/daemonize源码实现.md)
+  * [初始化流程](workerman/初始化流程.md)
   
 ## phpfpm管理脚本
   * [reload操作发生502错误的问题分析](phpfpm/reload操作发生502错误的问题分析.md)
