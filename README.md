@@ -4,7 +4,7 @@
 :smiling_imp::smiling_imp::smiling_imp: 
 
 ## workerman源码分析
-  * [daemonize源码]()
+  * [daemonize源码实现](workerman/daemonize源码实现.md)
   
 ## phpfpm管理脚本
   * [reload操作发生502错误的问题分析](phpfpm/reload操作发生502错误的问题分析.md)
