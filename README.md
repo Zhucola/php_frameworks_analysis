@@ -5,7 +5,7 @@
 
 |框架|
 |---|
-|Workerman|
+|Workerman3.5.22|
 |Yii2|
 |predis|
 |RedLock|
