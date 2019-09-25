@@ -5,11 +5,14 @@
 
 |框架|
 |---|
+|Workerman|
 |Yii2|
 |predis|
 |RedLock|
 |phpfpm管理脚本|
 
+## Workerman
+  * [TcpConnection类的生存周期]
 ## phpfpm管理脚本
   * [reload操作发生502错误的问题分析](phpfpm/reload操作发生502错误的问题分析.md)
   * [管理源码](/phpfpm/管理源码.md)
