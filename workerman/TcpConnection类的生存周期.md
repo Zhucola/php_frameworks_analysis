@@ -1,5 +1,3 @@
-使用的wm版本为3.5.22，如有错误感激您的指出
-
 最近发现了一个问题，TcpConnection类是如何被销毁的，在反复翻看源码之后终于找到了答案，不禁感叹一下wm作者的牛逼  
 
 在master进程创建了mainSocket之后，会fork子进程，然后子进程会将mainSocket扔到IO里面，进行read的事件监听  
