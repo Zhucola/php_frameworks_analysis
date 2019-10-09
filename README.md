@@ -5,11 +5,14 @@
 
 |框架|
 |---|
+|Composer|
 |Workerman3.5.22|
 |Yii2|
 |predis|
 |RedLock|
 |phpfpm管理脚本|
+
+## Composer 
 
 ## Workerman
   * [TcpConnection类的生存周期](workerman/TcpConnection类的生存周期.md)
